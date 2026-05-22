@@ -1,0 +1,56 @@
+{% extends "core/base.html" %}
+
+{% block title %}General Ledger{% endblock %}
+{% block page_label %}General Ledger{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>General Ledger</h1>
+            <p class="muted">{% if selected_account %}{{ selected_account }}{% else %}All posted journal lines{% endif %}</p>
+        </div>
+        {% include "core/accounting_nav.html" %}
+    </div>
+    <form class="filter-form" method="get">
+        <div class="field">
+            <label for="account">Account</label>
+            <select id="account" name="account">
+                <option value="">All accounts</option>
+                {% for account in accounts %}
+                    <option value="{{ account.id }}" {% if selected_account_id == account.id|stringformat:"s" %}selected{% endif %}>{{ account }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Filter</button>
+    </form>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Reference</th>
+                    <th>Account</th>
+                    <th>Description</th>
+                    <th>Debit</th>
+                    <th>Credit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in lines %}
+                    <tr>
+                        <td>{{ line.journal_entry.entry_date }}</td>
+                        <td>{{ line.journal_entry.reference }}</td>
+                        <td>{{ line.account }}</td>
+                        <td>{{ line.description|default:line.journal_entry.description }}</td>
+                        <td>{{ line.debit }}</td>
+                        <td>{{ line.credit }}</td>
+                    </tr>
+                {% empty %}
+                    <tr class="empty-row"><td colspan="6">No posted journal lines found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

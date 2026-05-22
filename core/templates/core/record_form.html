@@ -1,0 +1,175 @@
+{% extends "core/base.html" %}
+
+{% block title %}{{ mode }} {{ config.title }}{% endblock %}
+
+{% block extra_head %}
+{% if slug == "employees" %}
+<style>
+    .employee-form-card {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+    }
+    .employee-panel-head {
+        align-items: flex-start;
+    }
+    .employee-passport-panel {
+        display: grid;
+        gap: 7px;
+        justify-items: center;
+        padding: 9px;
+        border: 1px solid var(--sentinel-line);
+        border-top: 2px solid var(--sentinel-green);
+        border-radius: 8px;
+        background: #f8fafc;
+        width: 142px;
+    }
+    .employee-head-actions {
+        display: grid;
+        gap: 10px;
+        justify-items: end;
+        margin-left: auto;
+    }
+    .employee-passport-frame {
+        width: 96px;
+        aspect-ratio: 35 / 45;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border: 1px solid var(--sentinel-line-strong);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--sentinel-muted);
+    }
+    .employee-passport-frame img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .employee-passport-placeholder {
+        display: grid;
+        gap: 4px;
+        justify-items: center;
+        text-align: center;
+        font-size: 11px;
+        font-weight: 800;
+    }
+    .employee-passport-placeholder i {
+        font-size: 22px;
+        color: var(--sentinel-blue);
+    }
+    .employee-passport-panel label {
+        margin: 0;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+    .employee-passport-panel input[type="file"] {
+        min-height: auto;
+        padding: 5px;
+        font-size: 11px;
+    }
+    .employee-passport-panel a,
+    .employee-passport-panel br {
+        display: none;
+    }
+    .employee-passport-panel input[type="checkbox"],
+    .employee-passport-panel input[type="checkbox"] + label {
+        display: none;
+    }
+    .employee-passport-panel .helptext {
+        text-align: center;
+    }
+    @media (max-width: 980px) {
+        .employee-form-card {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .employee-passport-panel {
+            justify-items: center;
+        }
+        .employee-passport-frame {
+            width: 96px;
+        }
+    }
+    @media (max-width: 720px) {
+        .employee-form-card {
+            grid-template-columns: 1fr;
+        }
+        .employee-head-actions,
+        .employee-passport-panel {
+            width: 100%;
+        }
+        .employee-head-actions {
+            justify-items: stretch;
+        }
+        .employee-passport-frame {
+            width: 96px;
+            justify-self: center;
+        }
+    }
+</style>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head {% if slug == 'employees' %}employee-panel-head{% endif %}">
+        <div>
+            <h1>{{ mode }} {{ config.title }}</h1>
+            <p class="muted">{{ config.department }}</p>
+        </div>
+        {% if slug == "employees" %}
+            <div class="employee-head-actions">
+                {% for field in form %}
+                    {% if field.name == "passport_photo" %}
+                        <div class="employee-passport-panel">
+                            <label for="{{ field.id_for_label }}">Passport Photo</label>
+                            <div class="employee-passport-frame">
+                                {% if record.passport_photo %}
+                                    <img src="{{ record.passport_photo.url }}" alt="{{ record.full_name }} passport photo">
+                                {% else %}
+                                    <div class="employee-passport-placeholder">
+                                        <i class="fa-solid fa-id-badge"></i>
+                                        <span>Passport size</span>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <input
+                                class="form-control"
+                                type="file"
+                                name="{{ field.html_name }}"
+                                id="{{ field.id_for_label }}"
+                                accept="image/*"
+                                form="record-form"
+                            >
+                            {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+                            {{ field.errors }}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+                <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Back to {{ config.title }}</a>
+            </div>
+        {% else %}
+            <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Back to {{ config.title }}</a>
+        {% endif %}
+    </div>
+    <form id="record-form" class="form-card {% if slug == 'employees' %}employee-form-card{% endif %}" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {% for field in form %}
+            {% if slug != "employees" or field.name != "passport_photo" %}
+                <div class="field">
+                    {{ field.label_tag }}
+                    {{ field }}
+                    {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+                    {{ field.errors }}
+                </div>
+            {% endif %}
+        {% endfor %}
+        <div class="form-actions">
+            <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Cancel</a>
+            <button class="btn btn-success" type="submit">Save</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

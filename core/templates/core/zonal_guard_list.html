@@ -1,0 +1,58 @@
+{% extends "core/base.html" %}
+
+{% block title %}Zonal Employee List{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Zonal Employee List</h1>
+            <p class="muted">Active employees and sites grouped by supervisor zone.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-success" href="{% url 'core:record_add' 'zone-employee-allocations' %}">Allocate Employee</a>
+            <a class="btn btn-light" href="{% url 'core:record_add' 'zone-site-allocations' %}">Allocate Site</a>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Zone</th>
+                    <th>Supervisor</th>
+                    <th>Employees</th>
+                    <th>Sites</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for zone in zones %}
+                    <tr>
+                        <td>{{ zone.zone_code }} - {{ zone.zone_name }}</td>
+                        <td>{{ zone.supervisor.full_name }}</td>
+                        <td>
+                            {% for allocation in zone.employee_allocations.all %}
+                                {% if allocation.status == "active" and not allocation.end_date %}
+                                    <div>{{ allocation.employee.company_number }} - {{ allocation.employee.full_name }}</div>
+                                {% endif %}
+                            {% empty %}
+                                -
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% for allocation in zone.site_allocations.all %}
+                                {% if allocation.status == "active" and not allocation.end_date %}
+                                    <div>{{ allocation.site.site_code }} - {{ allocation.site.site_name }}</div>
+                                {% endif %}
+                            {% empty %}
+                                -
+                            {% endfor %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4">No zones found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

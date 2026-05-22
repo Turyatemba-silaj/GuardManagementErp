@@ -1,0 +1,1272 @@
+from decimal import Decimal
+from io import BytesIO
+
+from django.contrib.auth.models import Group, User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError
+from django.test import TestCase, override_settings
+from django.utils import timezone
+from openpyxl import Workbook, load_workbook
+
+from .models import (
+    Account,
+    Budget,
+    Client,
+    DepartmentChoices,
+    Deployment,
+    Employee,
+    GuardSchedule,
+    Contract,
+    ContractSiteRequirement,
+    Attendance,
+    AttendanceDevice,
+    AttendanceDeviceEvent,
+    Invoice,
+    JobOffer,
+    JournalEntry,
+    JournalLine,
+    Payment,
+    Position,
+    RecruitmentApplication,
+    RecruitmentInterview,
+    RecruitmentRequisition,
+    Role,
+    Salary,
+    Shift,
+    Site,
+    StatusChoices,
+    Training,
+    Zone,
+    ZoneEmployeeAllocation,
+    ZoneSiteAllocation,
+)
+from .accounting import ensure_default_accounts, post_all_accounting, post_invoice, post_salary
+from .crud import MODEL_REGISTRY
+
+
+class FinanceCalculationTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="finance-manager", password="pass")
+        manager_group, _created = Group.objects.get_or_create(name="Manager")
+        self.user.groups.add(manager_group)
+        self.client.login(username="finance-manager", password="pass")
+        self.role = Role.objects.create(role_name="Guard", department=DepartmentChoices.OPERATIONS)
+        self.position = Position.objects.create(
+            position_title="Security Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("300000.00"),
+            salary_range_max=Decimal("600000.00"),
+        )
+        self.employee = Employee.objects.create(
+            first_name="Alex",
+            last_name="Okello",
+            phone_number="0700000000",
+            email="alex@example.com",
+            national_id="NIN001",
+            role=self.role,
+            position=self.position,
+        )
+
+    def test_salary_calculates_net_salary(self):
+        salary = Salary.objects.create(
+            employee=self.employee,
+            pay_period_start="2026-05-01",
+            pay_period_end="2026-05-31",
+            basic_salary=Decimal("500000.00"),
+            allowances=Decimal("50000.00"),
+            deductions=Decimal("25000.00"),
+            overtime_pay=Decimal("10000.00"),
+            bonus=Decimal("15000.00"),
+        )
+
+        self.assertEqual(salary.gross_pay, Decimal("575000.00"))
+        self.assertEqual(salary.nssf_employee, Decimal("28750.00"))
+        self.assertEqual(salary.nssf_employer, Decimal("57500.00"))
+        self.assertEqual(salary.total_deductions, Decimal("53750.00"))
+        self.assertEqual(salary.net_salary, Decimal("521250.00"))
+
+    def test_shift_splits_basic_and_overtime_hours_under_uganda_law(self):
+        shift = Shift.objects.create(
+            shift_name="Twelve Hour Day",
+            code="T12",
+            start_time="08:00",
+            end_time="20:00",
+        )
+        shift.refresh_from_db()
+
+        self.assertEqual(shift.duration_hours, Decimal("12.00"))
+        self.assertEqual(shift.basic_hours, Decimal("8.00"))
+        self.assertEqual(shift.daily_overtime_hours, Decimal("4.00"))
+        self.assertEqual(shift.normal_day_overtime_multiplier, Decimal("1.50"))
+        self.assertEqual(shift.public_holiday_overtime_multiplier, Decimal("2.00"))
+
+    def test_invoice_balance_and_paid_status_are_calculated(self):
+        client = Client.objects.create(
+            client_name="Acme Mall",
+            contact_person="Jane",
+            phone_number="0711111111",
+            contract_start_date="2026-01-01",
+        )
+        invoice = Invoice.objects.create(
+            client=client,
+            invoice_number="INV-001",
+            due_date="2026-06-15",
+            total_amount=Decimal("1000000.00"),
+            paid_amount=Decimal("1000000.00"),
+        )
+
+        self.assertEqual(invoice.balance_amount, Decimal("0.00"))
+        self.assertEqual(invoice.status, StatusChoices.PAID)
+
+    def test_budget_remaining_amount_is_calculated(self):
+        budget = Budget.objects.create(
+            year=2026,
+            department=DepartmentChoices.OPERATIONS,
+            category="Equipment",
+            allocated_amount=Decimal("2000000.00"),
+            spent_amount=Decimal("750000.00"),
+        )
+
+        self.assertEqual(budget.remaining_amount, Decimal("1250000.00"))
+
+    def test_default_accounts_are_created(self):
+        accounts = ensure_default_accounts()
+
+        self.assertIn("1000", accounts)
+        self.assertEqual(Account.objects.count(), 12)
+
+    def test_invoice_posts_balanced_journal_entry(self):
+        client = Client.objects.create(
+            client_name="Ledger Client",
+            contact_person="Jane",
+            phone_number="0711111112",
+            contract_start_date="2026-01-01",
+        )
+        invoice = Invoice.objects.create(
+            client=client,
+            invoice_number="INV-LEDGER-001",
+            due_date="2026-06-15",
+            total_amount=Decimal("750000.00"),
+        )
+
+        entry = post_invoice(invoice)
+
+        self.assertTrue(entry.is_balanced)
+        self.assertEqual(entry.total_debit, Decimal("750000.00"))
+        self.assertEqual(entry.total_credit, Decimal("750000.00"))
+        self.assertTrue(JournalLine.objects.filter(account__account_code="2300").exists())
+
+    def test_invoice_calculates_from_contract_site_equipment_and_vat(self):
+        client = Client.objects.create(
+            client_name="Auto Billing Client",
+            contact_person="Jane",
+            phone_number="0711111114",
+            contract_start_date="2026-01-01",
+        )
+        site = Site.objects.create(
+            client=client,
+            site_name="Auto Billing Site",
+            site_address="Plot 2",
+            city="Kampala",
+            required_guards_per_shift=3,
+        )
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="AUTO-BILL-001",
+            start_date="2026-01-01",
+            billing_rate=Decimal("100000.00"),
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=site,
+            required_guards=4,
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+
+        invoice = Invoice.objects.create(
+            client=client,
+            contract=contract,
+            site=site,
+            billing_month="2026-05-01",
+            due_date="2026-06-15",
+            gun_count=2,
+            gun_rate=Decimal("50000.00"),
+            radio_count=1,
+            radio_rate=Decimal("25000.00"),
+            metal_detector_count=1,
+            metal_detector_rate=Decimal("30000.00"),
+            walk_through_machine_count=1,
+            walk_through_machine_rate=Decimal("70000.00"),
+            dog_count=1,
+            dog_rate=Decimal("90000.00"),
+        )
+
+        self.assertTrue(invoice.invoice_number.startswith("INV-2026"))
+        self.assertEqual(invoice.guard_count, 4)
+        self.assertEqual(invoice.rate_per_guard, Decimal("100000.00"))
+        self.assertEqual(invoice.subtotal_amount, Decimal("715000.00"))
+        self.assertEqual(invoice.vat_amount, Decimal("128700.00"))
+        self.assertEqual(invoice.total_amount, Decimal("843700.00"))
+        self.assertEqual(invoice.balance_amount, Decimal("843700.00"))
+
+    def test_invoice_can_bill_all_sites_under_contract(self):
+        client = Client.objects.create(
+            client_name="Multi Site Client",
+            contact_person="Ruth",
+            phone_number="0711111120",
+            email="ruth@example.com",
+            address="Plot 45 Kampala",
+            contract_start_date="2026-01-01",
+        )
+        first_site = Site.objects.create(client=client, site_name="Gate A", site_address="Plot A", city="Kampala")
+        second_site = Site.objects.create(client=client, site_name="Warehouse", site_address="Plot B", city="Kampala")
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="MULTI-001",
+            start_date="2026-01-01",
+            billing_rate=Decimal("100000.00"),
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=first_site,
+            required_guards=2,
+            rate_per_guard=Decimal("120000.00"),
+            gun_count=1,
+            gun_rate=Decimal("50000.00"),
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=second_site,
+            required_guards=3,
+            radio_count=2,
+            radio_rate=Decimal("25000.00"),
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+
+        invoice = Invoice.objects.create(
+            client=client,
+            contract=contract,
+            billing_scope=Invoice.BillingScope.CONTRACT,
+            billing_month="2026-05-01",
+            due_date="2026-06-15",
+        )
+
+        self.assertIsNone(invoice.site)
+        self.assertEqual(invoice.client_name, "Multi Site Client")
+        self.assertEqual(invoice.client_email, "ruth@example.com")
+        self.assertEqual(invoice.guard_count, 5)
+        self.assertEqual(invoice.subtotal_amount, Decimal("640000.00"))
+        self.assertEqual(invoice.total_amount, Decimal("755200.00"))
+
+    def test_invoice_can_bill_one_site_under_contract(self):
+        client = Client.objects.create(
+            client_name="Single Site Client",
+            contact_person="Mark",
+            phone_number="0711111121",
+            contract_start_date="2026-01-01",
+        )
+        first_site = Site.objects.create(client=client, site_name="Main", site_address="Plot A", city="Kampala")
+        second_site = Site.objects.create(client=client, site_name="Branch", site_address="Plot B", city="Kampala")
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="ONE-001",
+            start_date="2026-01-01",
+            billing_rate=Decimal("80000.00"),
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=first_site,
+            required_guards=2,
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=second_site,
+            required_guards=4,
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+
+        invoice = Invoice.objects.create(
+            client=client,
+            contract=contract,
+            billing_scope=Invoice.BillingScope.SITE,
+            site=second_site,
+            billing_month="2026-05-01",
+            due_date="2026-06-15",
+        )
+
+        self.assertEqual(invoice.site, second_site)
+        self.assertEqual(invoice.guard_count, 4)
+        self.assertEqual(invoice.subtotal_amount, Decimal("320000.00"))
+
+    def test_contract_invoice_data_returns_client_and_sites(self):
+        client = Client.objects.create(
+            client_name="Endpoint Client",
+            contact_person="Sarah",
+            phone_number="0711111122",
+            email="sarah@example.com",
+            address="Plot 90",
+            contract_start_date="2026-01-01",
+        )
+        site = Site.objects.create(client=client, site_name="Endpoint Site", site_address="Plot E", city="Kampala")
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="END-001",
+            start_date="2026-01-01",
+            billing_rate=Decimal("75000.00"),
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=site,
+            required_guards=3,
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+
+        response = self.client.get(f"/contracts/{contract.id}/invoice-data/?billing_month=2026-05-01")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["client"]["name"], "Endpoint Client")
+        self.assertEqual(payload["client"]["email"], "sarah@example.com")
+        self.assertEqual(payload["sites"][0]["id"], site.id)
+        self.assertEqual(payload["sites"][0]["guards"], 3)
+
+    def test_invoice_add_form_uses_billing_form_and_hides_manual_totals(self):
+        response = self.client.get("/records/invoices/add/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Number of Guards")
+        self.assertContains(response, "Rate Per Guard")
+        self.assertContains(response, "18% VAT")
+        self.assertNotContains(response, "Total amount")
+
+    def test_payroll_posts_salary_expense_and_payables(self):
+        salary = Salary.objects.create(
+            employee=self.employee,
+            pay_period_start="2026-05-01",
+            pay_period_end="2026-05-31",
+            basic_salary=Decimal("500000.00"),
+            allowances=Decimal("0.00"),
+            deductions=Decimal("25000.00"),
+            overtime_pay=Decimal("0.00"),
+            bonus=Decimal("0.00"),
+        )
+
+        entry = post_salary(salary)
+
+        self.assertTrue(entry.is_balanced)
+        self.assertEqual(entry.total_debit, entry.total_credit)
+        self.assertTrue(JournalLine.objects.filter(account__account_code="5000", debit=salary.gross_pay).exists())
+        self.assertTrue(JournalLine.objects.filter(account__account_code="2100", credit=salary.net_salary).exists())
+
+    def test_accounting_reports_render_from_posted_journals(self):
+        client = Client.objects.create(
+            client_name="Report Client",
+            contact_person="Jane",
+            phone_number="0711111113",
+            contract_start_date="2026-01-01",
+        )
+        invoice = Invoice.objects.create(
+            client=client,
+            invoice_number="INV-REPORT-001",
+            due_date="2026-06-15",
+            total_amount=Decimal("1000000.00"),
+        )
+        Payment.objects.create(
+            invoice=invoice,
+            payment_date="2026-05-20",
+            amount=Decimal("250000.00"),
+            payment_method="Bank",
+            transaction_ref="REPORT-PAY-001",
+        )
+        post_all_accounting()
+
+        for path in [
+            "/accounting/general-ledger/",
+            "/accounting/trial-balance/",
+            "/accounting/balance-sheet/",
+            "/accounting/income-statement/",
+        ]:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+
+
+class GuardSchedulingTests(TestCase):
+    def setUp(self):
+        self.hr_user = User.objects.create_user(username="hr", password="pass")
+        hr_group, _ = Group.objects.get_or_create(name="Human Resources Manager")
+        self.hr_user.groups.add(hr_group)
+        self.client.login(username="hr", password="pass")
+        self.client_record = Client.objects.create(
+            client_name="Central Plaza",
+            contact_person="Sarah",
+            phone_number="0700000001",
+            contract_start_date="2026-01-01",
+        )
+        self.site = Site.objects.create(
+            client=self.client_record,
+            site_name="Main Gate",
+            site_address="Plot 1",
+            city="Kampala",
+            latitude=Decimal("0.347596"),
+            longitude=Decimal("32.582520"),
+            geofence_radius_meters=150,
+        )
+        self.contract = Contract.objects.create(
+            client=self.client_record,
+            contract_number="TEST-CON-001",
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=self.contract,
+            site=self.site,
+            required_guards=10,
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+        role = Role.objects.create(role_name="Scheduling Guard", department=DepartmentChoices.OPERATIONS)
+        employee = Employee.objects.create(
+            first_name="Brian",
+            last_name="Kato",
+            phone_number="0700000002",
+            email="brian@example.com",
+            national_id="NIN002",
+            role=role,
+            company_number="G-001",
+        )
+        self.guard = employee
+        self.guard.work_card_uid = "CARD-001"
+        self.guard.save(update_fields=["work_card_uid", "updated_at"])
+        replacement_employee = Employee.objects.create(
+            first_name="Cathy",
+            last_name="Namuli",
+            phone_number="0700000005",
+            email="cathy@example.com",
+            national_id="NIN005",
+            role=role,
+            company_number="G-003",
+        )
+        self.replacement_guard = replacement_employee
+        supervisor_employee = Employee.objects.create(
+            first_name="Doreen",
+            last_name="Supervisor",
+            phone_number="0700000006",
+            email="doreen@example.com",
+            national_id="NIN006",
+            role=role,
+        )
+        self.supervisor = supervisor_employee
+        self.zone = Zone.objects.create(zone_code="TEST-ZN-001", zone_name="Test Zone", supervisor=self.supervisor)
+        ZoneSiteAllocation.objects.create(zone=self.zone, site=self.site)
+        self.shift, _created = Shift.objects.update_or_create(
+            code="D",
+            defaults={
+                "shift_name": "Day",
+                "start_time": "08:00",
+                "end_time": "20:00",
+            },
+        )
+        self.deployment = Deployment.objects.create(
+            employee=self.guard,
+            client=self.client_record,
+            site=self.site,
+            shift=self.shift,
+            start_date="2026-05-01",
+        )
+
+    def test_iot_swipe_captures_attendance_inside_geofence(self):
+        schedule = GuardSchedule.objects.create(
+            deployment=self.deployment,
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            shift_date="2026-05-16",
+        )
+        device = AttendanceDevice.objects.create(
+            device_id="SUP-DEVICE-001",
+            name="Supervisor handheld",
+            api_key="secret-token",
+            assigned_site=self.site,
+            assigned_supervisor=self.supervisor,
+        )
+
+        response = self.client.post(
+            "/api/attendance/swipe/",
+            data={
+                "card_uid": "CARD-001",
+                "device_id": device.device_id,
+                "site_id": self.site.id,
+                "timestamp": "2026-05-16T08:02:00+03:00",
+                "event": "check_in",
+                "latitude": "0.347596",
+                "longitude": "32.582520",
+            },
+            content_type="application/json",
+            HTTP_X_DEVICE_TOKEN="secret-token",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        attendance = Attendance.objects.get(employee=self.guard, date="2026-05-16", shift=self.shift)
+        schedule.refresh_from_db()
+        self.assertEqual(attendance.status, "Present")
+        self.assertEqual(attendance.capture_source, Attendance.CaptureSource.IOT)
+        self.assertEqual(attendance.device_id, device.device_id)
+        self.assertEqual(schedule.status, GuardSchedule.ScheduleStatus.COMPLETED)
+        self.assertEqual(AttendanceDeviceEvent.objects.get().status, AttendanceDeviceEvent.EventStatus.ACCEPTED)
+
+    def test_deployment_list_shows_and_searches_employee_number(self):
+        response = self.client.get("/records/deployments/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Employee Number")
+        self.assertContains(response, self.guard.company_number)
+        self.assertContains(response, "Export Excel")
+        self.assertContains(response, "Import Excel")
+
+        response = self.client.get("/records/deployments/", {"q": self.guard.company_number})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.guard.full_name)
+        self.assertNotContains(response, "No records found.")
+
+    def test_deployment_excel_export_downloads_workbook(self):
+        response = self.client.get("/deployments/export/excel/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        workbook = load_workbook(BytesIO(response.content))
+        worksheet = workbook.active
+        headers = [cell.value for cell in worksheet[1]]
+        self.assertEqual(headers[:4], ["employee_number", "employee_name", "client", "site_code"])
+        self.assertEqual(worksheet["A2"].value, self.guard.company_number)
+
+    def test_deployment_excel_import_updates_deployment(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["employee_number", "site_code", "shift_code", "start_date", "end_date", "status"])
+        worksheet.append(
+            [
+                self.guard.company_number,
+                self.site.site_code,
+                self.shift.code,
+                "2026-05-01",
+                "2026-05-31",
+                "inactive",
+            ]
+        )
+        buffer = BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        upload = SimpleUploadedFile(
+            "deployments.xlsx",
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        response = self.client.post("/deployments/import/excel/", {"deployment_file": upload})
+
+        self.assertRedirects(response, "/records/deployments/")
+        self.deployment.refresh_from_db()
+        self.assertEqual(self.deployment.end_date.isoformat(), "2026-05-31")
+        self.assertEqual(self.deployment.status, StatusChoices.INACTIVE)
+        self.assertEqual(Deployment.objects.count(), 1)
+
+    def test_iot_swipe_rejects_attendance_outside_geofence(self):
+        GuardSchedule.objects.create(
+            deployment=self.deployment,
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            shift_date="2026-05-16",
+        )
+        device = AttendanceDevice.objects.create(
+            device_id="SUP-DEVICE-002",
+            name="Supervisor handheld",
+            api_key="secret-token-2",
+            assigned_site=self.site,
+        )
+
+        response = self.client.post(
+            "/api/attendance/swipe/",
+            data={
+                "card_uid": "CARD-001",
+                "device_id": device.device_id,
+                "site_id": self.site.id,
+                "timestamp": "2026-05-16T08:02:00+03:00",
+                "event": "check_in",
+                "latitude": "0.360000",
+                "longitude": "32.600000",
+            },
+            content_type="application/json",
+            HTTP_X_DEVICE_TOKEN="secret-token-2",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Attendance.objects.filter(employee=self.guard, date="2026-05-16").exists())
+        event = AttendanceDeviceEvent.objects.get()
+        self.assertEqual(event.status, AttendanceDeviceEvent.EventStatus.REJECTED)
+        self.assertIn("outside geofence", event.message)
+
+    def test_attendance_page_generates_guard_schedule(self):
+        response = self.client.get(
+            "/attendances/",
+            {"site": self.site.id, "date": "2026-05-16"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(GuardSchedule.objects.count(), 1)
+        schedule = GuardSchedule.objects.get()
+        self.assertEqual(schedule.deployment, self.deployment)
+        self.assertContains(response, "Brian Kato")
+
+    def test_attendance_page_defaults_to_today_all_sites(self):
+        today = timezone.localdate()
+        self.deployment.start_date = today
+        self.deployment.save(update_fields=["start_date", "updated_at"])
+
+        response = self.client.get("/attendances/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(GuardSchedule.objects.count(), 1)
+        self.assertContains(response, "All sites")
+        self.assertContains(response, "Brian Kato")
+
+    def test_scheduled_guard_attendance_can_be_saved(self):
+        self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        schedule = GuardSchedule.objects.get()
+
+        response = self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"present_{schedule.id}": "on",
+                f"reason_{schedule.id}": "Reported on time",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        attendance = Attendance.objects.get(schedule=schedule)
+        schedule.refresh_from_db()
+        self.assertEqual(attendance.status, "Present")
+        self.assertEqual(attendance.remarks, "Reported on time")
+        self.assertEqual(schedule.status, GuardSchedule.ScheduleStatus.COMPLETED)
+
+    def test_absent_scheduled_guard_can_have_replacement(self):
+        self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        schedule = GuardSchedule.objects.get()
+
+        response = self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                f"replacement_guard_{schedule.id}": str(self.replacement_guard.id),
+                f"reason_{schedule.id}": "Scheduled guard called in sick",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.status, GuardSchedule.ScheduleStatus.MISSED)
+        self.assertEqual(schedule.replacement_employee, self.replacement_guard)
+        self.assertEqual(schedule.replacement_reason, "Scheduled guard called in sick")
+        self.assertEqual(Attendance.objects.get(employee=self.guard).status, "Absent")
+        replacement_attendance = Attendance.objects.get(employee=self.replacement_guard)
+        self.assertEqual(replacement_attendance.status, "Present")
+
+    def test_guard_schedule_form_routes_back_to_attendance_screen(self):
+        response = self.client.get("/records/guard-schedules/add/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/attendances/")
+
+    def test_excel_duty_roster_upload_creates_schedule(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["company_number", "site_code", "shift_name", "shift_date"])
+        worksheet.append([self.guard.company_number, self.site.site_code, self.shift.shift_name, "2026-05-20"])
+        content = BytesIO()
+        workbook.save(content)
+        upload = SimpleUploadedFile(
+            "duty-roster.xlsx",
+            content.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        response = self.client.post("/attendances/upload-roster/", {"roster_file": upload})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            GuardSchedule.objects.filter(
+                employee=self.guard,
+                site=self.site,
+                shift=self.shift,
+                shift_date="2026-05-20",
+            ).exists()
+        )
+
+    def test_excel_duty_roster_does_not_exceed_contract_requirement(self):
+        ContractSiteRequirement.objects.filter(site=self.site).update(required_guards=1)
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["company_number", "site_code", "shift_name", "shift_date"])
+        worksheet.append([self.guard.company_number, self.site.site_code, self.shift.shift_name, "2026-05-21"])
+        worksheet.append([self.replacement_guard.company_number, self.site.site_code, self.shift.shift_name, "2026-05-21"])
+        content = BytesIO()
+        workbook.save(content)
+        upload = SimpleUploadedFile(
+            "limited-duty-roster.xlsx",
+            content.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        response = self.client.post("/attendances/upload-roster/", {"roster_file": upload})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            GuardSchedule.objects.filter(site=self.site, shift=self.shift, shift_date="2026-05-21").count(),
+            1,
+        )
+
+    def test_contract_requirement_is_created_from_existing_site_data(self):
+        self.assertTrue(ContractSiteRequirement.objects.filter(site=self.site, required_guards=10).exists())
+
+    def test_contract_list_displays_required_guards(self):
+        response = self.client.get("/records/contracts/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Required Guards")
+        self.assertContains(response, "10")
+
+    def test_employee_list_displays_employee_identifiers_without_extra_guard_columns(self):
+        response = self.client.get("/records/employees/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Company Number")
+        self.assertContains(response, "NSSF Number")
+        self.assertContains(response, "Full Name")
+        self.assertContains(response, "National ID")
+        content = response.content.decode()
+        self.assertLess(content.index("Phone Number"), content.index("Date Of Birth"))
+        self.assertLess(content.index("Date Of Birth"), content.index("Gender"))
+        self.assertLess(content.index("Gender"), content.index("Email"))
+        self.assertLess(content.index("National ID"), content.index("NSSF Number"))
+        self.assertLess(content.index("NSSF Number"), content.index("Hire Date"))
+        self.assertNotContains(response, "Uniform Size")
+        self.assertNotContains(response, "Armed Status")
+        self.assertNotContains(response, "Licence Number")
+        self.assertNotContains(response, "Authority Level")
+        self.assertNotContains(response, "First Name")
+        self.assertNotContains(response, "Last Name")
+
+    def test_employee_form_hides_removed_guard_fields(self):
+        response = self.client.get("/records/employees/add/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "NSSF number")
+        self.assertNotContains(response, "Uniform size")
+        self.assertNotContains(response, "Armed status")
+        self.assertNotContains(response, "License no")
+        self.assertNotContains(response, "Authority level")
+
+    def test_payroll_is_generated_from_present_attendance(self):
+        position = Position.objects.create(
+            position_title="Payroll Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.bank_account = "010000123456"
+        self.guard.save(update_fields=["position", "bank_account", "updated_at"])
+        Attendance.objects.create(
+            employee=self.guard,
+            shift=self.shift,
+            date="2026-05-16",
+            status="Present",
+        )
+
+        response = self.client.post("/payroll/", {"month": "2026-05"})
+
+        self.assertEqual(response.status_code, 302)
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(salary.attendance_days, 1)
+        self.assertEqual(salary.basic_hours, Decimal("8.00"))
+        self.assertEqual(salary.overtime_hours, Decimal("4.00"))
+        self.assertEqual(salary.basic_salary, Decimal("16000.00"))
+        self.assertEqual(salary.overtime_pay, Decimal("12000.00"))
+        self.assertEqual(salary.gross_pay, Decimal("28000.00"))
+        self.assertEqual(salary.nssf_employee, Decimal("1400.00"))
+        self.assertEqual(salary.nssf_employer, Decimal("2800.00"))
+        self.assertEqual(salary.total_deductions, Decimal("1400.00"))
+        self.assertEqual(salary.net_salary, Decimal("26600.00"))
+
+    def test_payroll_refreshes_when_attendance_increases(self):
+        position = Position.objects.create(
+            position_title="Attendance Linked Payroll Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+        Attendance.objects.create(employee=self.guard, shift=self.shift, date="2026-05-16", status="Present")
+        self.client.get("/payroll/", {"month": "2026-05"})
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(salary.attendance_days, 1)
+        self.assertEqual(salary.gross_pay, Decimal("28000.00"))
+
+        Attendance.objects.create(employee=self.guard, shift=self.shift, date="2026-05-17", status="Present")
+        self.client.get("/payroll/", {"month": "2026-05"})
+        salary.refresh_from_db()
+
+        self.assertEqual(salary.attendance_days, 2)
+        self.assertEqual(salary.basic_hours, Decimal("16.00"))
+        self.assertEqual(salary.overtime_hours, Decimal("8.00"))
+        self.assertEqual(salary.gross_pay, Decimal("56000.00"))
+        self.assertEqual(salary.net_salary, Decimal("53200.00"))
+
+    def test_payroll_exports_and_payslip_are_downloadable(self):
+        position = Position.objects.create(
+            position_title="Payroll Export Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.bank_account = "010000123456"
+        self.guard.save(update_fields=["position", "bank_account", "updated_at"])
+        Attendance.objects.create(
+            employee=self.guard,
+            shift=self.shift,
+            date="2026-05-16",
+            status="Present",
+        )
+        self.client.post("/payroll/", {"month": "2026-05"})
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+
+        excel_response = self.client.get("/payroll/export/excel/", {"month": "2026-05"})
+        self.assertEqual(excel_response.status_code, 200)
+        self.assertEqual(
+            excel_response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        workbook = load_workbook(BytesIO(excel_response.content))
+        worksheet = workbook.active
+        self.assertEqual(worksheet["A1"].value, "Payroll Register: 2026-05-01 to 2026-05-31")
+        self.assertEqual(worksheet["A3"].value, "Employee")
+        self.assertEqual(worksheet["D3"].value, "Bank Account")
+        self.assertEqual(worksheet["D4"].value, "010000123456")
+
+        pdf_response = self.client.get("/payroll/export/pdf/", {"month": "2026-05"})
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response["Content-Type"], "application/pdf")
+        self.assertTrue(pdf_response.content.startswith(b"%PDF"))
+
+        payslip_response = self.client.get(f"/payroll/{salary.pk}/payslip/")
+        self.assertEqual(payslip_response.status_code, 200)
+        self.assertEqual(payslip_response["Content-Type"], "application/pdf")
+        self.assertTrue(payslip_response.content.startswith(b"%PDF"))
+
+        page_response = self.client.get("/payroll/", {"month": "2026-05"})
+        self.assertContains(page_response, "Bank Account")
+        self.assertContains(page_response, "Total Deductions")
+        self.assertContains(page_response, "010000123456")
+
+    def test_training_register_tracks_professional_certification_details(self):
+        training = Training.objects.create(
+            employee=self.guard,
+            training_name="Basic Guarding and Client Conduct",
+            course_code="SEC-101",
+            training_type=Training.TrainingType.INDUCTION,
+            training_objective="Confirm guard readiness before site deployment.",
+            provider="Sentinel Training Academy",
+            trainer_name="Senior Instructor",
+            trainer_contact="0700000999",
+            venue="Head Office Training Room",
+            start_date="2026-05-01",
+            end_date="2026-05-03",
+            duration_hours=Decimal("18.00"),
+            training_cost=Decimal("250000.00"),
+            pass_mark=70,
+            score=Decimal("82.50"),
+            result=Training.TrainingResult.PASSED,
+            certificate_no="CERT-SEC-101-001",
+            expiry_date="2027-05-03",
+            next_refresh_date="2027-04-03",
+            status=StatusChoices.APPROVED,
+            action_notes="Cleared for deployment.",
+        )
+
+        training.refresh_from_db()
+        self.assertTrue(training.is_certificate_current)
+        response = self.client.get("/records/trainings/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Training Type")
+        self.assertContains(response, "Senior Instructor")
+        self.assertContains(response, "CERT-SEC-101-001")
+
+    def test_hr_recruitment_tracks_physical_and_online_applications(self):
+        requisition = RecruitmentRequisition.objects.create(
+            requisition_number="REQ-2026-001",
+            vacancy_title="Security Guard",
+            position=self.guard.position,
+            department=DepartmentChoices.OPERATIONS,
+            requested_by=self.supervisor,
+            number_of_openings=5,
+            employment_type=RecruitmentRequisition.EmploymentType.FULL_TIME,
+            work_location="Kampala",
+            opening_date="2026-05-01",
+            closing_date="2026-05-31",
+            minimum_qualification="UCE",
+            experience_required="One year security experience",
+            status=RecruitmentRequisition.RequisitionStatus.OPEN,
+        )
+        physical_application = RecruitmentApplication.objects.create(
+            requisition=requisition,
+            first_name="Physical",
+            last_name="Applicant",
+            phone_number="0777000001",
+            application_source=RecruitmentApplication.ApplicationSource.PHYSICAL,
+            date_received="2026-05-02",
+            highest_qualification="UCE",
+            screening_score=76,
+            status=RecruitmentApplication.ApplicationStatus.SHORTLISTED,
+        )
+        online_application = RecruitmentApplication.objects.create(
+            requisition=requisition,
+            first_name="Online",
+            last_name="Applicant",
+            phone_number="0777000002",
+            email="online.applicant@example.com",
+            application_source=RecruitmentApplication.ApplicationSource.ONLINE,
+            online_profile_url="https://jobs.example.test/applications/1",
+            date_received="2026-05-03",
+            highest_qualification="UACE",
+            screening_score=82,
+            status=RecruitmentApplication.ApplicationStatus.INTERVIEW,
+        )
+        RecruitmentInterview.objects.create(
+            application=online_application,
+            interview_type=RecruitmentInterview.InterviewType.ONLINE,
+            scheduled_at=timezone.now(),
+            venue_or_link="https://meet.example.test/interview",
+            interviewer=self.supervisor,
+            score=84,
+            recommendation=RecruitmentInterview.InterviewRecommendation.RECOMMENDED,
+            status=StatusChoices.APPROVED,
+        )
+
+        self.assertEqual(requisition.applications_count, 2)
+        self.assertEqual(physical_application.full_name, "Physical Applicant")
+        response = self.client.get("/records/recruitment-applications/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Application Source")
+        self.assertContains(response, "Physical Applicant")
+        self.assertContains(response, "Online Applicant")
+        self.assertContains(response, "Online Application")
+
+    def test_audit_report_and_dashboard_include_recruitment_and_training_value(self):
+        requisition = RecruitmentRequisition.objects.create(
+            requisition_number="REQ-2026-AUDIT",
+            vacancy_title="Audit Guard",
+            department=DepartmentChoices.OPERATIONS,
+            requested_by=self.supervisor,
+            number_of_openings=2,
+            opening_date="2026-05-01",
+            closing_date="2026-05-31",
+            recruitment_budget=Decimal("1000000.00"),
+            actual_recruitment_cost=Decimal("850000.00"),
+            status=RecruitmentRequisition.RequisitionStatus.OPEN,
+        )
+        application = RecruitmentApplication.objects.create(
+            requisition=requisition,
+            first_name="Audit",
+            last_name="Hire",
+            phone_number="0777000003",
+            application_source=RecruitmentApplication.ApplicationSource.ONLINE,
+            date_received="2026-05-04",
+            screening_score=88,
+            status=RecruitmentApplication.ApplicationStatus.HIRED,
+        )
+        JobOffer.objects.create(
+            application=application,
+            offer_date="2026-05-05",
+            salary_offer=Decimal("600000.00"),
+            status=JobOffer.OfferStatus.ACCEPTED,
+            accepted_date="2026-05-06",
+        )
+        Training.objects.create(
+            employee=self.guard,
+            training_name="Audit Training",
+            provider="Sentinel Academy",
+            start_date="2026-05-07",
+            end_date="2026-05-08",
+            duration_hours=Decimal("12.00"),
+            budgeted_cost=Decimal("300000.00"),
+            training_cost=Decimal("250000.00"),
+            result=Training.TrainingResult.PASSED,
+            status=StatusChoices.APPROVED,
+        )
+
+        audit_response = self.client.get("/audit/", {"month": "2026-05"})
+
+        self.assertEqual(audit_response.status_code, 200)
+        self.assertContains(audit_response, "Recruitment")
+        self.assertContains(audit_response, "Training")
+        self.assertContains(audit_response, "Benefiting")
+        self.assertContains(audit_response, "Recruitment Spend")
+        self.assertContains(audit_response, "Training Spend")
+
+        dashboard_response = self.client.get("/dashboard/")
+
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertContains(dashboard_response, "Recruitment applications")
+        self.assertContains(dashboard_response, "Successful trainings")
+
+    def test_saracen_style_duty_roster_upload_creates_schedules(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["Saracen Uganda Limited Schedule for period : "])
+        worksheet.append([])
+        worksheet.append(["2022-12-12 07:04 Saracen International Site Roster for ST03956:Hima Factory"])
+        worksheet.append([])
+        worksheet.append(["Deployment Area: Fort Portal"])
+        worksheet.append([])
+        worksheet.append(["Scheduled Period: 2022-12-26 to 2023-01-25"])
+        worksheet.append([])
+        worksheet.append(["Pers No ", "Grade ", "Name ", "Contact ", "Worked days ", "Mo/26", "Tu/27", "We/28"])
+        worksheet.append(["1001", "", "Test Guard", "", "", "D", "O", "N"])
+        content = BytesIO()
+        workbook.save(content)
+        upload = SimpleUploadedFile(
+            "saracen-roster.xlsx",
+            content.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        response = self.client.post("/attendances/upload-roster/", {"roster_file": upload})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Site.objects.filter(site_code="ST03956", site_name="Hima Factory").exists())
+        self.assertEqual(GuardSchedule.objects.filter(notes__icontains="Saracen").count(), 2)
+
+    def test_zone_shift_summary_shows_marked_guards(self):
+        self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        schedule = GuardSchedule.objects.get()
+        self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                f"present_{schedule.id}": "yes",
+            },
+        )
+
+        response = self.client.get("/reports/zone-shift-summary/", {"date": "2026-05-16"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Test Zone")
+        self.assertContains(response, "Day")
+        self.assertContains(response, "Brian Kato")
+
+    def test_attendance_report_matches_query_layout(self):
+        self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        schedule = GuardSchedule.objects.get()
+        self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                f"present_{schedule.id}": "yes",
+            },
+        )
+
+        response = self.client.get(
+            "/reports/attendance/",
+            {"start_date": "2026-05-01", "end_date": "2026-05-31"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "attendance report")
+        self.assertContains(response, "Employee Number")
+        self.assertContains(response, "Site scheduled")
+        self.assertContains(response, "Brian Kato")
+
+
+class SiteCodeTests(TestCase):
+    def test_site_code_is_generated_from_client_name(self):
+        client = Client.objects.create(
+            client_name="Central Plaza",
+            contact_person="Sarah",
+            phone_number="0700000001",
+            contract_start_date="2026-01-01",
+        )
+
+        first_site = Site.objects.create(
+            client=client,
+            site_name="Main Gate",
+            site_address="Plot 1",
+            city="Kampala",
+        )
+        second_site = Site.objects.create(
+            client=client,
+            site_name="Parking Yard",
+            site_address="Plot 1",
+            city="Kampala",
+        )
+
+        self.assertEqual(first_site.site_code, "CPXXS0001")
+        self.assertEqual(second_site.site_code, "CPXXS0002")
+
+
+class ResponsiveCrudPageTests(TestCase):
+    @override_settings(ALLOWED_HOSTS=["testserver"])
+    def test_site_add_page_loads(self):
+        user = User.objects.create_user(username="hr", password="pass")
+        group, _ = Group.objects.get_or_create(name="Human Resources Manager")
+        user.groups.add(group)
+        self.client.login(username="hr", password="pass")
+
+        response = self.client.get("/records/sites/add/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Add Sites")
+
+
+class ZoneAuthorizationTests(TestCase):
+    def test_guard_cannot_have_two_active_zone_allocations(self):
+        client_record = Client.objects.create(
+            client_name="Zone Client",
+            contact_person="Sarah",
+            phone_number="0700000001",
+            contract_start_date="2026-01-01",
+        )
+        role = Role.objects.create(role_name="Zone Role", department=DepartmentChoices.OPERATIONS)
+        supervisor_employee = Employee.objects.create(
+            first_name="Susan",
+            last_name="Nabirye",
+            phone_number="0700000003",
+            email="susan@example.com",
+            national_id="NIN003",
+            role=role,
+        )
+        supervisor = supervisor_employee
+        guard_employee = Employee.objects.create(
+            first_name="Paul",
+            last_name="Mugerwa",
+            phone_number="0700000004",
+            email="paul@example.com",
+            national_id="NIN004",
+            role=role,
+            company_number="G-002",
+        )
+        guard = guard_employee
+        first_zone = Zone.objects.create(zone_code="ZN-001", zone_name="North", supervisor=supervisor)
+        second_zone = Zone.objects.create(zone_code="ZN-002", zone_name="South", supervisor=supervisor)
+
+        ZoneEmployeeAllocation.objects.create(zone=first_zone, employee=guard)
+
+        with self.assertRaises(IntegrityError):
+            ZoneEmployeeAllocation.objects.create(zone=second_zone, employee=guard)
+
+    def test_supervisor_cannot_access_client_management(self):
+        user = User.objects.create_user(username="supervisor", password="pass")
+        group, _ = Group.objects.get_or_create(name="Supervisor")
+        user.groups.add(group)
+        self.client.login(username="supervisor", password="pass")
+
+        response = self.client.get("/records/clients/")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_hr_manager_can_access_client_management(self):
+        user = User.objects.create_user(username="hr2", password="pass")
+        group, _ = Group.objects.get_or_create(name="Human Resources Manager")
+        user.groups.add(group)
+        self.client.login(username="hr2", password="pass")
+
+        response = self.client.get("/records/clients/")
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_manager_can_access_every_module(self):
+        user = User.objects.create_user(username="manager", password="pass")
+        group, _ = Group.objects.get_or_create(name="Manager")
+        user.groups.add(group)
+        self.client.login(username="manager", password="pass")
+
+        for slug in MODEL_REGISTRY:
+            with self.subTest(slug=slug):
+                response = self.client.get(f"/records/{slug}/")
+                self.assertEqual(response.status_code, 200)
+
+    def test_manager_sidebar_displays_every_module(self):
+        user = User.objects.create_user(username="sidebar-manager", password="pass")
+        group, _ = Group.objects.get_or_create(name="Manager")
+        user.groups.add(group)
+        self.client.login(username="sidebar-manager", password="pass")
+
+        response = self.client.get("/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        for config in MODEL_REGISTRY.values():
+            with self.subTest(title=config.title):
+                self.assertContains(response, config.title)
+
+    def test_sidebar_hides_redundant_workflow_tables(self):
+        user = User.objects.create_user(username="clean-sidebar-manager", password="pass")
+        group, _ = Group.objects.get_or_create(name="Manager")
+        user.groups.add(group)
+        self.client.login(username="clean-sidebar-manager", password="pass")
+
+        response = self.client.get("/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attendances")
+        self.assertContains(response, "Attendance Report")
+        self.assertContains(response, "Zonal Employees")
+        self.assertContains(response, "Asset Report")
+        self.assertNotContains(response, '<span class="menu-title">Assets</span>', html=True)
+        self.assertNotContains(response, '<span class="menu-title">Guard Schedules</span>', html=True)
+        self.assertNotContains(response, '<span class="menu-title">Attendance Records</span>', html=True)
+        self.assertNotContains(response, '<span class="menu-title">Zone Employee Allocations</span>', html=True)
+        self.assertNotContains(response, '<span class="menu-title">Zone Site Allocations</span>', html=True)
+
+    def test_supervisor_sidebar_hides_restricted_modules(self):
+        user = User.objects.create_user(username="sidebar-supervisor", password="pass")
+        group, _ = Group.objects.get_or_create(name="Supervisor")
+        user.groups.add(group)
+        self.client.login(username="sidebar-supervisor", password="pass")
+
+        response = self.client.get("/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Sites")
+        self.assertNotContains(response, 'href="/records/clients/"')

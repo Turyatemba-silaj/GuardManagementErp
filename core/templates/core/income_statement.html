@@ -1,0 +1,38 @@
+{% extends "core/base.html" %}
+
+{% block title %}Income Statement{% endblock %}
+{% block page_label %}Income Statement{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Income Statement</h1>
+            <p class="muted">Income and expenses from posted journals</p>
+        </div>
+        {% include "core/accounting_nav.html" %}
+    </div>
+    <div class="card-grid">
+        <article class="module-card">
+            <h2>Income</h2>
+            <div class="module-list">
+                {% for row in income_rows %}<div class="module-row"><span>{{ row.account }}</span><strong>{{ row.balance }}</strong></div>{% endfor %}
+                <div class="module-row"><span>Total Income</span><strong>{{ total_income }}</strong></div>
+            </div>
+        </article>
+        <article class="module-card">
+            <h2>Expenses</h2>
+            <div class="module-list">
+                {% for row in expense_rows %}<div class="module-row"><span>{{ row.account }}</span><strong>{{ row.balance }}</strong></div>{% endfor %}
+                <div class="module-row"><span>Total Expenses</span><strong>{{ total_expenses }}</strong></div>
+            </div>
+        </article>
+        <article class="module-card">
+            <h2>Net Income</h2>
+            <div class="module-list">
+                <div class="module-row"><span>Income less expenses</span><strong>{{ net_income }}</strong></div>
+            </div>
+        </article>
+    </div>
+</section>
+{% endblock %}

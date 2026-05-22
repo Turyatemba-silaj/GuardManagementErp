@@ -1,0 +1,76 @@
+{% extends "core/base.html" %}
+
+{% block title %}Payroll{% endblock %}
+{% block page_label %}Payroll{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Payroll</h1>
+            <p class="muted">{{ pay_period_start }} to {{ pay_period_end }}</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-light" href="{% url 'core:payroll_export_excel' %}?month={{ selected_month }}">Export Excel</a>
+            <a class="btn btn-light" href="{% url 'core:payroll_export_pdf' %}?month={{ selected_month }}">Export PDF</a>
+            <a class="btn btn-light" href="{% url 'core:record_list' 'salaries' %}">Salary Records</a>
+        </div>
+    </div>
+    <form class="filter-form" method="post">
+        {% csrf_token %}
+        <div class="field">
+            <label for="month">Payroll Month</label>
+            <input id="month" name="month" type="month" value="{{ selected_month }}">
+        </div>
+        <button class="btn btn-success" type="submit">Generate From Attendance</button>
+    </form>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Employee</th>
+                    <th>Bank Account</th>
+                    <th>Days</th>
+                    <th>Basic Hours</th>
+                    <th>Overtime Hours</th>
+                    <th>Basic Pay</th>
+                    <th>Overtime Pay</th>
+                    <th>Gross Pay</th>
+                    <th>NSSF Employee</th>
+                    <th>NSSF Employer</th>
+                    <th>Total Deductions</th>
+                    <th>Net Salary</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for salary in salaries %}
+                    <tr>
+                        <td>{{ salary.employee.full_name }}</td>
+                        <td>{{ salary.employee.bank_account|default:"-" }}</td>
+                        <td>{{ salary.attendance_days }}</td>
+                        <td>{{ salary.basic_hours }}</td>
+                        <td>{{ salary.overtime_hours }}</td>
+                        <td>{{ salary.basic_salary }}</td>
+                        <td>{{ salary.overtime_pay }}</td>
+                        <td>{{ salary.gross_pay }}</td>
+                        <td>{{ salary.nssf_employee }}</td>
+                        <td>{{ salary.nssf_employer }}</td>
+                        <td>{{ salary.total_deductions }}</td>
+                        <td>{{ salary.net_salary }}</td>
+                        <td>{{ salary.get_status_display }}</td>
+                        <td>
+                            <a class="btn btn-light" href="{% url 'core:payslip_pdf' salary.pk %}">Payslip PDF</a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr class="empty-row">
+                        <td colspan="14">No payroll records generated for this month.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

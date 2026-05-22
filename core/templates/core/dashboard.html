@@ -1,0 +1,511 @@
+{% extends "core/base.html" %}
+
+{% block title %}Security Company Management System{% endblock %}
+{% block page_label %}Dashboard{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js" defer></script>
+<style>
+    .dashboard-hero {
+        padding: 22px;
+        display: grid;
+        grid-template-columns: minmax(280px, .95fr) minmax(360px, 1.45fr);
+        gap: 20px;
+        align-items: start;
+        background:
+            linear-gradient(135deg, rgba(22, 163, 74, .12), rgba(37, 99, 235, .08) 56%, rgba(245, 158, 11, .1)),
+            #fff;
+    }
+    .dashboard-title {
+        display: grid;
+        gap: 12px;
+    }
+    .dashboard-title h1 {
+        max-width: 460px;
+        line-height: 1.08;
+    }
+    .dashboard-kicker {
+        width: fit-content;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 1px solid #bbf7d0;
+        border-radius: 999px;
+        background: #ecfdf3;
+        color: #166534;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+    }
+    .dashboard-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .dashboard-actions .btn {
+        min-width: 0;
+        justify-content: flex-start;
+        min-height: 42px;
+    }
+    .ops-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 6px;
+    }
+    .ops-chip {
+        min-height: 66px;
+        padding: 12px;
+        border: 1px solid rgba(203, 213, 225, .9);
+        border-radius: 8px;
+        background: rgba(255,255,255,.72);
+    }
+    .ops-chip span {
+        display: block;
+        color: var(--sentinel-muted);
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+    }
+    .ops-chip strong {
+        display: block;
+        margin-top: 5px;
+        color: var(--sentinel-ink);
+        font-size: 20px;
+        line-height: 1;
+    }
+    .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+    }
+    .metric-card {
+        min-height: 112px;
+        padding: 15px;
+        display: grid;
+        align-content: space-between;
+        gap: 10px;
+        background: #fff;
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        box-shadow: 0 10px 26px rgba(15, 23, 42, .05);
+        border-top: 3px solid var(--sentinel-green);
+    }
+    .metric-card:nth-child(2) { border-top-color: var(--sentinel-blue); }
+    .metric-card:nth-child(3) { border-top-color: var(--sentinel-amber); }
+    .metric-card:nth-child(4) { border-top-color: #7c3aed; }
+    .metric-card:nth-child(5) { border-top-color: var(--sentinel-red); }
+    .metric-card:nth-child(6) { border-top-color: #0891b2; }
+    .metric-card i {
+        width: 36px;
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        color: #166534;
+        background: #ecfdf3;
+        flex: 0 0 auto;
+    }
+    .metric-card strong {
+        display: block;
+        font-size: 27px;
+        font-weight: 800;
+        line-height: 1;
+        color: var(--sentinel-ink);
+    }
+    .metric-card span {
+        color: var(--sentinel-muted);
+        font-weight: 700;
+    }
+    .analytics-grid {
+        display: grid;
+        grid-template-columns: minmax(300px, .82fr) minmax(420px, 1.38fr);
+        gap: 18px;
+        margin-bottom: 18px;
+    }
+    .chart-panel {
+        background: #fff;
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        box-shadow: 0 10px 26px rgba(15, 23, 42, .05);
+        min-width: 0;
+        overflow: hidden;
+    }
+    .chart-head {
+        min-height: 50px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--sentinel-line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .chart-head h2 {
+        font-size: 16px;
+    }
+    .chart-head span {
+        color: var(--sentinel-muted);
+        white-space: nowrap;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+    .chart-body {
+        position: relative;
+        min-height: 292px;
+        padding: 16px;
+    }
+    .chart-body canvas {
+        width: 100% !important;
+        height: 260px !important;
+        display: block;
+    }
+    .chart-stack {
+        display: grid;
+        gap: 18px;
+    }
+    .cumulative-list {
+        display: grid;
+        gap: 13px;
+        padding: 18px;
+    }
+    .cumulative-row {
+        display: grid;
+        grid-template-columns: 128px minmax(0, 1fr) 74px;
+        gap: 12px;
+        align-items: center;
+    }
+    .cumulative-row strong {
+        font-weight: 600;
+    }
+    .bar-track {
+        height: 16px;
+        background: #eef2f6;
+        border-radius: 999px;
+        overflow: hidden;
+    }
+    .bar-fill {
+        height: 100%;
+        min-width: 2px;
+        background: linear-gradient(90deg, var(--sentinel-green), var(--sentinel-blue));
+        border-radius: 999px;
+    }
+    .cumulative-value {
+        text-align: right;
+        color: var(--sentinel-muted);
+    }
+    .module-section {
+        margin-top: 4px;
+    }
+    .module-card {
+        border-top: 3px solid var(--sentinel-blue);
+    }
+    .module-card:nth-child(2) { border-top-color: var(--sentinel-green); }
+    .module-card:nth-child(3) { border-top-color: var(--sentinel-amber); }
+    .module-list a {
+        align-items: center;
+    }
+    .module-list .muted {
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #f8fafc;
+        font-size: 12px;
+        font-weight: 800;
+    }
+    @media (max-width: 1080px) {
+        .dashboard-hero,
+        .analytics-grid {
+            grid-template-columns: 1fr;
+        }
+        .metric-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .ops-strip {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+    @media (max-width: 720px) {
+        .metric-grid,
+        .dashboard-actions,
+        .ops-strip {
+            grid-template-columns: 1fr;
+        }
+        .cumulative-row {
+            grid-template-columns: 1fr;
+            gap: 6px;
+        }
+        .cumulative-value {
+            text-align: left;
+        }
+        .dashboard-actions .btn {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+
+<section class="metric-grid" aria-label="Summary totals">
+    <article class="metric-card">
+        <i class="fa-solid fa-building-shield"></i>
+        <div>
+            <strong>{{ operations.sites }}</strong>
+            <span>Active sites</span>
+        </div>
+    </article>
+    <article class="metric-card">
+        <i class="fa-solid fa-user-shield"></i>
+        <div>
+            <strong>{{ human_resource.employees }}</strong>
+            <span>Employees</span>
+        </div>
+    </article>
+    <article class="metric-card">
+        <i class="fa-solid fa-user-plus"></i>
+        <div>
+            <strong>{{ recruitment_dashboard.applications }}</strong>
+            <span>Recruitment applications</span>
+        </div>
+    </article>
+    <article class="metric-card">
+        <i class="fa-solid fa-graduation-cap"></i>
+        <div>
+            <strong>{{ training_dashboard.successful }}</strong>
+            <span>Successful trainings</span>
+        </div>
+    </article>
+    <article class="metric-card">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div>
+            <strong>{{ operations.incidents }}</strong>
+            <span>Incidents</span>
+        </div>
+    </article>
+    <article class="metric-card">
+        <i class="fa-solid fa-file-invoice-dollar"></i>
+        <div>
+            <strong>{{ finance.invoices }}</strong>
+            <span>Invoices</span>
+        </div>
+    </article>
+</section>
+
+<section class="analytics-grid" aria-label="Dashboard analytics">
+    <article class="chart-panel">
+        <div class="chart-head">
+            <h2>Department Mix</h2>
+            <span>Pie chart</span>
+        </div>
+        <div class="chart-body">
+            <canvas id="departmentPie" aria-label="Department record distribution"></canvas>
+        </div>
+    </article>
+    <div class="chart-stack">
+        <article class="chart-panel">
+            <div class="chart-head">
+                <h2>Operations Graph</h2>
+                <span>Live records</span>
+            </div>
+            <div class="chart-body">
+                <canvas id="operationsGraph" aria-label="Operations module records"></canvas>
+            </div>
+        </article>
+        <article class="chart-panel">
+            <div class="chart-head">
+                <h2>Department Cumulative Bar</h2>
+                <span>Total build-up</span>
+            </div>
+            <div class="cumulative-list">
+                {% for row in cumulative_rows %}
+                    <div class="cumulative-row">
+                        <strong>{{ row.label }}</strong>
+                        <div class="bar-track" aria-hidden="true">
+                            <div class="bar-fill" style="width: {{ row.percent }}%;"></div>
+                        </div>
+                        <span class="cumulative-value">{{ row.cumulative }} total</span>
+                    </div>
+                {% endfor %}
+            </div>
+            <div class="chart-body">
+                <canvas id="cumulativeBar" aria-label="Cumulative department totals"></canvas>
+            </div>
+        </article>
+    </div>
+</section>
+
+<section class="analytics-grid" aria-label="Resource and finance graphs">
+    <article class="chart-panel">
+        <div class="chart-head">
+            <h2>Human Resource Graph</h2>
+            <span>Workforce activity</span>
+        </div>
+        <div class="chart-body">
+            <canvas id="hrGraph" aria-label="Human resource module records"></canvas>
+        </div>
+    </article>
+    <article class="chart-panel">
+        <div class="chart-head">
+            <h2>Finance Graph</h2>
+            <span>Commercial activity</span>
+        </div>
+        <div class="chart-body">
+            <canvas id="financeGraph" aria-label="Finance module records"></canvas>
+        </div>
+    </article>
+</section>
+
+<section class="card-grid module-section">
+    {% for department, configs in model_groups.items %}
+        <article class="module-card">
+            <h2>{{ department }}</h2>
+            <div class="module-list">
+                {% for slug, config in configs %}
+                    <a href="{% if slug == 'guard-schedules' %}{% url 'core:attendances' %}{% else %}{% url 'core:record_list' slug %}{% endif %}">
+                        <span>{{ config.title }}</span>
+                        <span class="muted">Manage</span>
+                    </a>
+                {% endfor %}
+            </div>
+        </article>
+    {% endfor %}
+</section>
+
+{{ chart_data|json_script:"dashboard-chart-data" }}
+<script>
+    window.addEventListener("DOMContentLoaded", function () {
+        var chartElement = document.getElementById("dashboard-chart-data");
+        if (!chartElement || !window.Chart) {
+            return;
+        }
+        var data = JSON.parse(chartElement.textContent);
+        var palette = ["#16a34a", "#2563eb", "#f59e0b", "#667085", "#dc2626", "#0891b2"];
+        var gridColor = "rgba(102, 112, 133, .18)";
+        var labelColor = "#243244";
+
+        if (window.ChartDataLabels) {
+            Chart.register(ChartDataLabels);
+        }
+        Chart.defaults.font.family = '"Helvetica Neue", Arial, sans-serif';
+        Chart.defaults.color = labelColor;
+        Chart.defaults.plugins.legend.labels.boxWidth = 10;
+        Chart.defaults.plugins.legend.labels.boxHeight = 10;
+
+        function makeBarChart(id, labels, values, label, color) {
+            var node = document.getElementById(id);
+            if (!node) {
+                return;
+            }
+            new Chart(node, {
+                type: "bar",
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: values,
+                        backgroundColor: color,
+                        borderRadius: 4,
+                        maxBarThickness: 34
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        datalabels: {
+                            anchor: "end",
+                            align: "top",
+                            color: labelColor,
+                            font: { weight: "700" },
+                            formatter: function (value) {
+                                return value;
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } }
+                    }
+                }
+            });
+        }
+
+        new Chart(document.getElementById("departmentPie"), {
+            type: "doughnut",
+            data: {
+                labels: data.departmentLabels,
+                datasets: [{
+                    data: data.departmentValues,
+                    backgroundColor: palette.slice(0, 3),
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: "58%",
+                plugins: {
+                    legend: { position: "bottom" },
+                    datalabels: {
+                        color: "#fff",
+                        font: { weight: "700" },
+                        formatter: function (value, context) {
+                            var values = context.chart.data.datasets[0].data;
+                            var total = values.reduce(function (sum, item) { return sum + item; }, 0);
+                            if (!total || !value) {
+                                return "";
+                            }
+                            return value + " (" + Math.round((value / total) * 100) + "%)";
+                        }
+                    }
+                }
+            }
+        });
+
+        makeBarChart("operationsGraph", data.operationsLabels, data.operationsValues, "Records", "#16a34a");
+        makeBarChart("hrGraph", data.hrLabels, data.hrValues, "Records", "#2563eb");
+        makeBarChart("financeGraph", data.financeLabels, data.financeValues, "Records", "#f59e0b");
+
+        new Chart(document.getElementById("cumulativeBar"), {
+            type: "bar",
+            data: {
+                labels: data.cumulativeLabels,
+                datasets: [{
+                    label: "Cumulative records",
+                    data: data.cumulativeValues,
+                    backgroundColor: ["#16a34a", "#2563eb", "#f59e0b"],
+                    borderRadius: 4,
+                    maxBarThickness: 38
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    datalabels: {
+                        anchor: "end",
+                        align: "top",
+                        color: labelColor,
+                        font: { weight: "700" },
+                        formatter: function (value) {
+                            return value;
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

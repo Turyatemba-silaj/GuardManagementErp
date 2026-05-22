@@ -1,0 +1,181 @@
+{% extends "core/base.html" %}
+
+{% block title %}Attendance Query{% endblock %}
+{% block page_label %}Attendance Query{% endblock %}
+
+{% block extra_head %}
+<style>
+    .attendance-report {
+        border-top: 3px solid var(--sentinel-green);
+    }
+    .attendance-report .query-title {
+        padding: 28px 22px 10px;
+        font-size: 26px;
+        font-weight: 400;
+    }
+    .attendance-report .query-form {
+        display: flex;
+        align-items: end;
+        gap: 30px;
+        flex-wrap: wrap;
+        padding: 14px 34px 58px;
+        border-bottom: 1px solid var(--sentinel-line);
+    }
+    .attendance-report .period-controls {
+        display: flex;
+        align-items: center;
+    }
+    .attendance-report .period-controls input {
+        width: 126px;
+        border-radius: 0;
+    }
+    .attendance-report .period-controls span {
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 12px;
+        border-top: 1px solid #ccc;
+        border-bottom: 1px solid #ccc;
+        background: #fff;
+    }
+    .attendance-report .employee-number {
+        width: 238px;
+    }
+    .attendance-report .submit-btn {
+        width: 148px;
+    }
+    .attendance-report .report-tools {
+        padding: 30px 18px 4px;
+        border-bottom: 0;
+    }
+    .attendance-report .report-search {
+        margin-left: auto;
+    }
+    .attendance-report table {
+        min-width: 1040px;
+    }
+    .attendance-report th {
+        background: #fff;
+        color: #1f2d3d;
+        font-size: 14px;
+        text-transform: none;
+    }
+    .attendance-report th .sort {
+        float: right;
+        color: #cfd4d8;
+        font-size: 16px;
+    }
+    .attendance-report tbody tr:nth-child(odd) td {
+        background: #f8fafc;
+    }
+    @media (max-width: 720px) {
+        .attendance-report .query-form,
+        .attendance-report .period-controls {
+            align-items: stretch;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .attendance-report .period-controls input,
+        .attendance-report .employee-number,
+        .attendance-report .submit-btn {
+            width: 100%;
+        }
+        .attendance-report .period-controls span {
+            justify-content: center;
+            border: 1px solid #ccc;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="page-title">
+    <h1>Attendance Query</h1>
+    <span class="muted"><i class="fa-solid fa-gauge-high"></i> Home &gt; reports</span>
+</section>
+
+<section class="panel attendance-report">
+    <h2 class="query-title">attendance report</h2>
+    <form class="query-form" method="get">
+        <div class="field">
+            <label for="employee_number">Employee Number</label>
+            <input class="employee-number" id="employee_number" name="employee_number" type="text" value="{{ employee_number }}">
+        </div>
+        <div class="field">
+            <label>Period</label>
+            <div class="period-controls">
+                <input name="start_date" type="date" value="{{ start_date }}" aria-label="Start date">
+                <span>to</span>
+                <input name="end_date" type="date" value="{{ end_date }}" aria-label="End date">
+            </div>
+        </div>
+        <button class="show-btn submit-btn" type="submit">submit</button>
+    </form>
+
+    <div class="table-tools report-tools">
+        <div>
+            <div class="buttons" aria-label="Export buttons">
+                <span class="tool-btn">Excel</span>
+                <span class="tool-btn">PDF</span>
+                <span class="tool-btn">Column visibility</span>
+            </div>
+            <div class="length-row" style="padding: 8px 0 0;">
+                <span>Show</span>
+                <select aria-label="Rows per page" style="width: 74px;">
+                    <option>10</option>
+                    <option>25</option>
+                    <option>50</option>
+                    <option>100</option>
+                </select>
+                <span>entries</span>
+            </div>
+        </div>
+        <form class="search report-search" method="get">
+            <input type="hidden" name="employee_number" value="{{ employee_number }}">
+            <input type="hidden" name="start_date" value="{{ start_date }}">
+            <input type="hidden" name="end_date" value="{{ end_date }}">
+            <label for="q">Search:</label>
+            <input id="q" name="q" type="search" value="{{ search_query }}">
+        </form>
+    </div>
+
+    <div class="table-wrap" style="padding: 0 18px 18px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>date<br>scheduled <span class="sort">&UpDownArrow;</span></th>
+                    <th>Site scheduled <span class="sort">&UpDownArrow;</span></th>
+                    <th>Scheduled<br>Employee <span class="sort">&UpDownArrow;</span></th>
+                    <th>Shift<br>Code <span class="sort">&UpDownArrow;</span></th>
+                    <th>Basic<br>Hours <span class="sort">&UpDownArrow;</span></th>
+                    <th>Overtime<br>Hours <span class="sort">&UpDownArrow;</span></th>
+                    <th>attendance <span class="sort">&UpDownArrow;</span></th>
+                    <th>replacement <span class="sort">&UpDownArrow;</span></th>
+                    <th>recorded<br>by <span class="sort">&UpDownArrow;</span></th>
+                    <th>Date<br>recorded <span class="sort">&UpDownArrow;</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.date_scheduled|date:"Y-m-d" }}</td>
+                        <td>{{ row.site_scheduled }}</td>
+                        <td>{{ row.scheduled_employee }}</td>
+                        <td>{{ row.shift_code }}</td>
+                        <td>{{ row.basic_hours }}</td>
+                        <td>{{ row.overtime_hours }}</td>
+                        <td>{{ row.attendance }}</td>
+                        <td>{{ row.replacement }}</td>
+                        <td>{{ row.recorded_by }}</td>
+                        <td>{{ row.date_recorded|date:"Y-m-d H:i:s" }}</td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="8">No attendance records found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

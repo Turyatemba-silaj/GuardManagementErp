@@ -1,0 +1,55 @@
+{% extends "core/base.html" %}
+
+{% block title %}Import Deployments{% endblock %}
+{% block page_label %}Import Deployments{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Import Deployments</h1>
+            <p class="muted">Import Excel rows into deployments.</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:record_list' 'deployments' %}">Back to Deployments</a>
+    </div>
+    <form class="form-card" method="post" enctype="multipart/form-data" style="grid-template-columns: 1fr;">
+        {% csrf_token %}
+        <div class="field">
+            <label for="deployment_file">Excel deployment file</label>
+            <input id="deployment_file" name="deployment_file" type="file" accept=".xlsx,.xlsm" required>
+            <span class="helptext">
+                Required columns: employee_number, site_code, shift_code, start_date. Optional columns: end_date, status, supervisor_number.
+            </span>
+        </div>
+        <div class="table-wrap">
+            <table style="min-width: 900px;">
+                <thead>
+                    <tr>
+                        <th>employee_number</th>
+                        <th>site_code</th>
+                        <th>shift_code</th>
+                        <th>start_date</th>
+                        <th>end_date</th>
+                        <th>status</th>
+                        <th>supervisor_number</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>DEMO-G-001</td>
+                        <td>DC1XS0001</td>
+                        <td>D</td>
+                        <td>2026-05-16</td>
+                        <td></td>
+                        <td>active</td>
+                        <td>DEMO-S-001</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-success" type="submit">Upload Deployments</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

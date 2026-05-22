@@ -1,0 +1,73 @@
+{% extends "core/base.html" %}
+
+{% block title %}{{ config.title }}{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>{{ config.title }}</h1>
+            <p class="muted">{{ config.department }}</p>
+        </div>
+        {% if slug == "deployments" %}
+            <div class="actions">
+                <a class="btn btn-light" href="{% url 'core:deployments_export_excel' %}">Export Excel</a>
+                <a class="btn btn-light" href="{% url 'core:deployments_import_excel' %}">Import Excel</a>
+                {% if can_add_record %}
+                    <a class="btn btn-success" href="{% url 'core:record_add' slug %}">Add {{ config.title }}</a>
+                {% endif %}
+            </div>
+        {% elif can_add_record %}
+            <a class="btn btn-success" href="{% url 'core:record_add' slug %}">Add {{ config.title }}</a>
+        {% endif %}
+    </div>
+    <div class="toolbar">
+        <form class="search-form" method="get">
+            <input name="q" type="search" value="{{ search_query }}" placeholder="Search {{ config.title }}">
+            <button class="btn btn-primary" type="submit">Search</button>
+            {% if search_query %}
+                <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Clear</a>
+            {% endif %}
+        </form>
+        <span class="muted">{{ rows|length }} records shown</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    {% for column in column_labels %}
+                        <th>{{ column }}</th>
+                    {% endfor %}
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        {% for value in row.values %}
+                            <td>{{ value|default:"-" }}</td>
+                        {% endfor %}
+                        <td>
+                            <div class="actions">
+                                {% if can_edit_record %}
+                                    <a class="btn btn-warning" href="{% url 'core:record_edit' slug row.object.pk %}">Edit</a>
+                                {% endif %}
+                                {% if can_delete_record %}
+                                    <a class="btn btn-danger" href="{% url 'core:record_delete' slug row.object.pk %}">Delete</a>
+                                {% endif %}
+                                {% if not can_edit_record and not can_delete_record %}
+                                    <span class="muted">View only</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="{{ columns|length|add:1 }}">No records found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,2297 @@
+import calendar
+from collections import defaultdict
+from decimal import Decimal
+from io import BytesIO
+import json
+import re
+
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.db import transaction
+from django.db.models import Count, ProtectedError, Sum
+from django.db.models.functions import Coalesce
+from django.forms import DateInput, DateTimeInput, FileInput, TimeInput, modelform_factory
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.db.models import Q
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
+from django.views.decorators.csrf import csrf_exempt
+from openpyxl import Workbook, load_workbook
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+from . import models
+from .access import can_access_internal, can_manage_slug, is_manager, is_supervisor
+from .accounting import ensure_default_accounts, post_all_accounting
+from .crud import MODEL_REGISTRY, visible_grouped_registry
+from .forms import InvoiceForm
+
+
+MODEL_FORM_EXCLUDES = {
+    models.Employee: (
+        "created_at",
+        "updated_at",
+        "uniform_size",
+        "authority_level",
+    ),
+}
+
+
+def get_model_config(slug):
+    config = MODEL_REGISTRY.get(slug)
+    if not config:
+        raise Http404("Page not found")
+    return config
+
+
+def build_model_form(model):
+    if model is models.Invoice:
+        return InvoiceForm
+    form = modelform_factory(model, exclude=MODEL_FORM_EXCLUDES.get(model, ("created_at", "updated_at")))
+    for field_name, field in form.base_fields.items():
+        field.widget.attrs.setdefault("class", "form-control")
+        if field_name == "passport_photo":
+            field.widget.attrs.setdefault("accept", "image/*")
+        if getattr(field.widget, "input_type", "") == "text":
+            field.widget.attrs.setdefault("placeholder", field.label)
+        if field.widget.__class__.__name__ == "DateInput":
+            field.widget = DateInput(attrs={"class": "form-control"}, format="%Y-%m-%d")
+            field.input_formats = ["%Y-%m-%d"]
+        elif field.widget.__class__.__name__ == "DateTimeInput":
+            field.widget = DateTimeInput(attrs={"class": "form-control"}, format="%Y-%m-%dT%H:%M")
+            field.input_formats = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S"]
+        elif field.widget.__class__.__name__ == "TimeInput":
+            field.widget = TimeInput(attrs={"class": "form-control"}, format="%H:%M")
+            field.input_formats = ["%H:%M", "%H:%M:%S"]
+        elif isinstance(field.widget, FileInput):
+            field.widget.attrs["class"] = "form-control"
+    return form
+
+
+def column_label(column):
+    labels = {
+        "company_number": "Company Number",
+        "employee_number": "Employee Number",
+        "nssf_number": "NSSF Number",
+        "full_name": "Full Name",
+        "phone_number": "Phone Number",
+        "bank_account": "Bank Account",
+        "date_of_birth": "Date Of Birth",
+        "national_id": "National ID",
+        "hire_date": "Hire Date",
+        "uniform_size": "Uniform Size",
+        "training_level": "Training Level",
+        "assigned_zone": "Assigned Zone",
+        "experience_years": "Experience Years",
+        "authority_level": "Authority Level",
+        "created_at": "Created At",
+        "updated_at": "Updated At",
+    }
+    return labels.get(column, column.replace("_", " ").title())
+
+
+def column_value(obj, column):
+    display_method = getattr(obj, f"get_{column}_display", None)
+    if callable(display_method):
+        return display_method()
+    return getattr(obj, column, "")
+
+
+def scoped_queryset(user, slug, queryset):
+    if is_manager(user) or is_supervisor(user):
+        return queryset
+    return queryset.none()
+
+
+def contract_schedule_limit_reached(site, shift, shift_date, deployment=None):
+    limit = contract_required_guards(site, shift, shift_date)
+    if not limit:
+        return False
+    schedules = models.GuardSchedule.objects.filter(site=site, shift=shift, shift_date=shift_date)
+    if deployment and deployment.pk:
+        schedules = schedules.exclude(deployment=deployment)
+    return schedules.count() >= limit
+
+
+def contract_limit_message(site, shift, shift_date):
+    shift_name = shift.shift_name
+    return (
+        f"{site.site_name} already has the contracted {contract_required_guards(site, shift, shift_date)} "
+        f"guard(s) for {shift_name} on {shift_date}."
+    )
+
+
+def contract_required_guards(site, shift, shift_date):
+    requirement = (
+        models.ContractSiteRequirement.objects.select_related("contract")
+        .filter(
+            site=site,
+            status=models.StatusChoices.ACTIVE,
+            contract__status=models.StatusChoices.ACTIVE,
+            start_date__lte=shift_date,
+        )
+        .filter(Q(end_date__gte=shift_date) | Q(end_date__isnull=True))
+        .filter(Q(contract__end_date__gte=shift_date) | Q(contract__end_date__isnull=True))
+        .filter(Q(shift=shift) | Q(shift__isnull=True))
+        .order_by("-shift_id", "-start_date")
+        .first()
+    )
+    if requirement:
+        return requirement.required_guards
+    return site.required_guards_per_shift
+
+
+def home(request):
+    return render(
+        request,
+        "core/home.html",
+        {
+            "profile_stats": [
+                ("24/7", "Control room monitoring"),
+                ("3", "Departments integrated"),
+                ("100%", "Roster-based deployment"),
+                ("Rapid", "Incident response workflow"),
+            ],
+            "services": [
+                {
+                    "title": "Manned Guarding",
+                    "text": "Trained guards for offices, estates, schools, retail sites, warehouses, and gated communities.",
+                },
+                {
+                    "title": "Site Supervision",
+                    "text": "Supervisor-led patrols, deployment checks, shift handovers, and accountability reports.",
+                },
+                {
+                    "title": "Incident Management",
+                    "text": "Structured reporting for incident type, severity, location, guard, and follow-up status.",
+                },
+                {
+                    "title": "Workforce Control",
+                    "text": "Attendance, leave, training, disciplinary action, documents, and performance tracking.",
+                },
+            ],
+        },
+    )
+
+
+@login_required
+@user_passes_test(can_access_internal)
+def dashboard(request):
+    visible_groups = visible_grouped_registry(request.user)
+    operations = {
+        "clients": models.Client.objects.count(),
+        "sites": models.Site.objects.count(),
+        "deployments": models.Deployment.objects.count(),
+        "incidents": models.Incident.objects.count(),
+        "patrol_logs": models.PatrolLog.objects.count(),
+        "assets": models.Asset.objects.count(),
+    }
+    human_resource = {
+        "employees": models.Employee.objects.count(),
+        "recruitment_applications": models.RecruitmentApplication.objects.count(),
+        "attendance": models.Attendance.objects.count(),
+        "leave_requests": models.Leave.objects.count(),
+        "trainings": models.Training.objects.count(),
+        "salaries": models.Salary.objects.count(),
+    }
+    finance = {
+        "advances": models.Advance.objects.count(),
+        "invoices": models.Invoice.objects.count(),
+        "payments": models.Payment.objects.count(),
+        "budgets": models.Budget.objects.count(),
+        "expenses": models.Expense.objects.count(),
+    }
+    recruitment_dashboard = {
+        "open_requisitions": models.RecruitmentRequisition.objects.filter(
+            status__in=[
+                models.RecruitmentRequisition.RequisitionStatus.OPEN,
+                models.RecruitmentRequisition.RequisitionStatus.SHORTLISTING,
+                models.RecruitmentRequisition.RequisitionStatus.INTERVIEWING,
+                models.RecruitmentRequisition.RequisitionStatus.OFFERING,
+            ]
+        ).count(),
+        "applications": models.RecruitmentApplication.objects.count(),
+        "accepted_offers": models.JobOffer.objects.filter(status=models.JobOffer.OfferStatus.ACCEPTED).count(),
+    }
+    training_dashboard = {
+        "records": models.Training.objects.count(),
+        "successful": models.Training.objects.filter(
+            result__in=[models.Training.TrainingResult.COMPLETED, models.Training.TrainingResult.PASSED]
+        ).count(),
+        "expired": models.Training.objects.filter(result=models.Training.TrainingResult.EXPIRED).count(),
+    }
+    department_totals = {
+        "Operations": sum(operations.values()),
+        "Human Resource": sum(human_resource.values()),
+        "Finance": sum(finance.values()),
+    }
+    cumulative_total = sum(department_totals.values()) or 1
+    running_total = 0
+    cumulative_rows = []
+    for label, value in department_totals.items():
+        running_total += value
+        cumulative_rows.append(
+            {
+                "label": label,
+                "value": value,
+                "cumulative": running_total,
+                "percent": round((running_total / cumulative_total) * 100, 1),
+            }
+        )
+    chart_data = {
+        "departmentLabels": list(department_totals.keys()),
+        "departmentValues": list(department_totals.values()),
+        "operationsLabels": [column_label(key) for key in operations.keys()],
+        "operationsValues": list(operations.values()),
+        "hrLabels": [column_label(key) for key in human_resource.keys()],
+        "hrValues": list(human_resource.values()),
+        "financeLabels": [column_label(key) for key in finance.keys()],
+        "financeValues": list(finance.values()),
+        "cumulativeLabels": [row["label"] for row in cumulative_rows],
+        "cumulativeValues": [row["cumulative"] for row in cumulative_rows],
+    }
+    context = {
+        "operations": operations,
+        "human_resource": human_resource,
+        "finance": finance,
+        "recruitment_dashboard": recruitment_dashboard,
+        "training_dashboard": training_dashboard,
+        "department_totals": department_totals,
+        "cumulative_rows": cumulative_rows,
+        "chart_data": chart_data,
+        "recent_incidents": models.Incident.objects.select_related("employee", "deployment")[:5],
+        "open_invoices": models.Invoice.objects.select_related("client").exclude(status=models.StatusChoices.PAID)[:5],
+        "model_groups": visible_groups,
+    }
+    return render(request, "core/dashboard.html", context)
+
+
+@login_required
+@user_passes_test(can_access_internal)
+def contract_invoice_data(request, pk):
+    contract = get_object_or_404(models.Contract.objects.select_related("client"), pk=pk)
+    billing_month = parse_date(request.GET.get("billing_month") or "") or timezone.localdate()
+    requirements = (
+        models.ContractSiteRequirement.objects.select_related("site")
+        .filter(contract=contract, status=models.StatusChoices.ACTIVE, start_date__lte=billing_month)
+        .filter(Q(end_date__gte=billing_month) | Q(end_date__isnull=True))
+        .order_by("site__site_name", "shift__start_time", "start_date")
+    )
+    sites = {}
+    for requirement in requirements:
+        site = requirement.site
+        row = sites.setdefault(
+            site.id,
+            {
+                "id": site.id,
+                "name": str(site),
+                "address": site.site_address,
+                "guards": 0,
+                "subtotal": Decimal("0.00"),
+            },
+        )
+        row["guards"] += requirement.required_guards
+        row["subtotal"] += requirement.billable_total
+    for row in sites.values():
+        row["subtotal"] = str(row["subtotal"].quantize(Decimal("0.01")))
+    client = contract.client
+    return JsonResponse(
+        {
+            "client": {
+                "id": client.id,
+                "name": client.client_name,
+                "address": client.address,
+                "email": client.email,
+                "contact": client.contact_person,
+                "phone": client.phone_number,
+            },
+            "contract": {
+                "id": contract.id,
+                "number": contract.contract_number,
+                "billing_rate": str(contract.billing_rate),
+            },
+            "sites": list(sites.values()),
+        }
+    )
+
+
+def month_bounds(value=None):
+    selected = parse_date(value) if value else timezone.localdate()
+    if not selected:
+        selected = timezone.localdate()
+    start = selected.replace(day=1)
+    end = selected.replace(day=calendar.monthrange(selected.year, selected.month)[1])
+    return start, end
+
+
+def attendance_shift_hours(attendance):
+    shift = attendance.shift
+    if not shift and attendance.schedule_id:
+        shift = attendance.schedule.shift
+    if shift:
+        return shift.basic_hours, shift.daily_overtime_hours
+    if attendance.time_in and attendance.time_out:
+        start_minutes = attendance.time_in.hour * 60 + attendance.time_in.minute
+        end_minutes = attendance.time_out.hour * 60 + attendance.time_out.minute
+        if end_minutes <= start_minutes:
+            end_minutes += 24 * 60
+        duration = (Decimal(end_minutes - start_minutes) / Decimal(60)).quantize(Decimal("0.01"))
+        return min(duration, Decimal("8.00")), max(duration - Decimal("8.00"), Decimal("0.00"))
+    return Decimal("0.00"), Decimal("0.00")
+
+
+def payroll_hourly_rate(employee):
+    if employee.position_id and employee.position.salary_range_min:
+        return (employee.position.salary_range_min / Decimal("208.00")).quantize(Decimal("0.01"))
+    return Decimal("0.00")
+
+
+def money(value):
+    return value.quantize(Decimal("0.01"))
+
+
+def generate_payroll_from_attendance(start, end):
+    totals = defaultdict(lambda: {"days": set(), "basic_hours": Decimal("0.00"), "overtime_hours": Decimal("0.00")})
+    attendances = (
+        models.Attendance.objects.select_related("employee__position", "shift", "schedule__shift")
+        .filter(date__range=(start, end), status__iexact="Present")
+        .order_by("employee__first_name", "employee__last_name", "date")
+    )
+    employees = {}
+    for attendance in attendances:
+        employee = attendance.employee
+        employees[employee.id] = employee
+        basic_hours, overtime_hours = attendance_shift_hours(attendance)
+        totals[employee.id]["days"].add(attendance.date)
+        totals[employee.id]["basic_hours"] += basic_hours
+        totals[employee.id]["overtime_hours"] += overtime_hours
+
+    salaries = []
+    for employee_id, total in totals.items():
+        employee = employees[employee_id]
+        hourly_rate = payroll_hourly_rate(employee)
+        basic_salary = money(total["basic_hours"] * hourly_rate)
+        overtime_pay = money(total["overtime_hours"] * hourly_rate * Decimal("1.50"))
+        existing = models.Salary.objects.filter(employee=employee, pay_period_start=start).first()
+        salary, _created = models.Salary.objects.update_or_create(
+            employee=employee,
+            pay_period_start=start,
+            defaults={
+                "pay_period_end": end,
+                "attendance_days": len(total["days"]),
+                "basic_hours": total["basic_hours"],
+                "overtime_hours": total["overtime_hours"],
+                "basic_salary": basic_salary,
+                "allowances": existing.allowances if existing else Decimal("0.00"),
+                "deductions": existing.deductions if existing else Decimal("0.00"),
+                "overtime_pay": overtime_pay,
+                "bonus": existing.bonus if existing else Decimal("0.00"),
+                "payment_date": existing.payment_date if existing else None,
+                "payment_method": existing.payment_method if existing else "",
+                "status": existing.status if existing else models.StatusChoices.UNPAID,
+            },
+        )
+        salaries.append(salary)
+    return salaries
+
+
+def refresh_payroll_for_date(value):
+    start, end = month_bounds(value.isoformat())
+    return generate_payroll_from_attendance(start, end)
+
+
+def decimal_from_payload(value):
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
+
+
+def shift_contains_datetime(shift, captured_at):
+    current_minutes = captured_at.hour * 60 + captured_at.minute
+    start_minutes = shift.start_time.hour * 60 + shift.start_time.minute
+    end_minutes = shift.end_time.hour * 60 + shift.end_time.minute
+    if end_minutes <= start_minutes:
+        return current_minutes >= start_minutes or current_minutes <= end_minutes
+    return start_minutes <= current_minutes <= end_minutes
+
+
+def matching_schedule(employee, site, captured_at, payload):
+    shift_date = timezone.localtime(captured_at).date()
+    schedules = models.GuardSchedule.objects.select_related("shift", "site", "employee").filter(
+        employee=employee,
+        site=site,
+        shift_date=shift_date,
+    )
+    shift_value = str(payload.get("shift") or payload.get("shift_code") or "").strip()
+    shift_id = payload.get("shift_id")
+    if shift_id:
+        schedules = schedules.filter(shift_id=shift_id)
+    elif shift_value:
+        schedules = schedules.filter(Q(shift__code__iexact=shift_value) | Q(shift__shift_name__iexact=shift_value))
+
+    schedule_list = list(schedules.order_by("shift__start_time"))
+    if len(schedule_list) == 1:
+        return schedule_list[0]
+    for schedule in schedule_list:
+        if shift_contains_datetime(schedule.shift, timezone.localtime(captured_at)):
+            return schedule
+    return schedule_list[0] if schedule_list else None
+
+
+def device_token_from_request(request):
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+    return request.headers.get("X-Device-Token", "").strip()
+
+
+def json_error(message, status=400, **extra):
+    payload = {"status": "error", "message": message}
+    payload.update(extra)
+    return JsonResponse(payload, status=status)
+
+
+@csrf_exempt
+def attendance_swipe_api(request):
+    if request.method != "POST":
+        return json_error("Only POST is allowed.", status=405)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON payload.")
+
+    token = device_token_from_request(request)
+    device_identifier = str(payload.get("device_id") or "").strip()
+    card_uid = str(payload.get("card_uid") or "").strip()
+    event_type = str(payload.get("event") or models.AttendanceDeviceEvent.EventType.CHECK_IN).strip().lower()
+    if event_type not in models.AttendanceDeviceEvent.EventType.values:
+        event_type = models.AttendanceDeviceEvent.EventType.CHECK_IN
+
+    timestamp_value = payload.get("timestamp") or payload.get("captured_at")
+    captured_at = parse_datetime(str(timestamp_value)) if timestamp_value else timezone.now()
+    if captured_at is None:
+        captured_at = timezone.now()
+    if timezone.is_naive(captured_at):
+        captured_at = timezone.make_aware(captured_at, timezone.get_current_timezone())
+
+    latitude = decimal_from_payload(payload.get("latitude"))
+    longitude = decimal_from_payload(payload.get("longitude"))
+
+    device = models.AttendanceDevice.objects.filter(device_id=device_identifier, api_key=token, is_active=True).first()
+    site = None
+    employee = None
+    schedule = None
+    attendance = None
+    status = models.AttendanceDeviceEvent.EventStatus.REJECTED
+    message = ""
+    distance = None
+
+    site_value = payload.get("site_id") or payload.get("site_code")
+    if site_value:
+        site_filter = Q(site_code__iexact=str(site_value))
+        if str(site_value).isdigit():
+            site_filter |= Q(id=int(site_value))
+        site = models.Site.objects.filter(site_filter).first()
+
+    if device and device.assigned_site_id:
+        if site and site.id != device.assigned_site_id:
+            message = "Device is not registered for the submitted site."
+        site = device.assigned_site
+
+    if not message:
+        if not device:
+            message = "Unknown or inactive attendance device."
+        elif not card_uid:
+            message = "Missing card UID."
+        elif not site:
+            message = "Unknown attendance site."
+        elif latitude is None or longitude is None:
+            message = "GPS latitude and longitude are required."
+        else:
+            within_geofence, distance = site.is_within_geofence(latitude, longitude)
+            if distance is None:
+                message = "Site geofence is not configured."
+            elif not within_geofence:
+                message = f"Attendance rejected outside geofence. Distance: {distance:.2f}m; allowed: {site.geofence_radius_meters}m."
+
+    if not message:
+        employee = models.Employee.objects.filter(work_card_uid__iexact=card_uid, status=models.StatusChoices.ACTIVE).first()
+        if not employee:
+            message = "Unknown or inactive guard card."
+
+    if not message:
+        schedule = matching_schedule(employee, site, captured_at, payload)
+        if not schedule:
+            message = "No matching scheduled shift found for this guard, site, and date."
+
+    with transaction.atomic():
+        event = models.AttendanceDeviceEvent.objects.create(
+            device=device,
+            device_identifier=device_identifier,
+            card_uid=card_uid,
+            employee=employee,
+            site=site,
+            schedule=schedule,
+            event_type=event_type,
+            event_timestamp=captured_at,
+            latitude=latitude,
+            longitude=longitude,
+            geofence_distance_meters=Decimal(str(round(distance, 2))) if distance is not None else None,
+            status=status,
+            message=message,
+            payload=payload,
+        )
+
+        if not message:
+            local_captured_at = timezone.localtime(captured_at)
+            defaults = {
+                "schedule": schedule,
+                "shift": schedule.shift,
+                "status": "Present",
+                "capture_source": models.Attendance.CaptureSource.IOT,
+                "card_uid": card_uid,
+                "device_id": device.device_id,
+                "captured_by": device.assigned_supervisor.user if device.assigned_supervisor_id and device.assigned_supervisor.user_id else None,
+                "captured_at": captured_at,
+                "latitude": latitude,
+                "longitude": longitude,
+                "geofence_distance_meters": Decimal(str(round(distance, 2))) if distance is not None else None,
+                "remarks": f"IoT {event.get_event_type_display()} captured by {device.device_id}.",
+            }
+            if event_type == models.AttendanceDeviceEvent.EventType.CHECK_OUT:
+                defaults["time_out"] = local_captured_at.time()
+            else:
+                defaults["time_in"] = local_captured_at.time()
+            attendance, _created = models.Attendance.objects.update_or_create(
+                employee=employee,
+                date=schedule.shift_date,
+                shift=schedule.shift,
+                defaults=defaults,
+            )
+            schedule.status = models.GuardSchedule.ScheduleStatus.COMPLETED
+            schedule.notes = f"IoT attendance captured by {device.device_id}."
+            schedule.save(update_fields=["status", "notes", "updated_at"])
+            event.attendance = attendance
+            event.status = models.AttendanceDeviceEvent.EventStatus.ACCEPTED
+            event.message = "Attendance captured successfully."
+            event.save(update_fields=["attendance", "status", "message", "updated_at"])
+
+    if attendance:
+        refresh_payroll_for_date(attendance.date)
+        return JsonResponse(
+            {
+                "status": "ok",
+                "message": "Attendance captured successfully.",
+                "employee": employee.full_name,
+                "company_number": employee.company_number,
+                "site": site.site_name,
+                "shift": schedule.shift.shift_name,
+                "date": schedule.shift_date.isoformat(),
+                "event": event_type,
+                "distance_meters": round(distance, 2) if distance is not None else None,
+                "attendance_id": attendance.id,
+                "event_id": event.id,
+            }
+        )
+    return json_error(message, event_id=event.id)
+
+
+def payroll_queryset(start):
+    return models.Salary.objects.select_related("employee").filter(pay_period_start=start).order_by(
+        "employee__first_name", "employee__last_name"
+    )
+
+
+def payroll_headers():
+    return [
+        "Employee",
+        "Company Number",
+        "NSSF Number",
+        "Bank Account",
+        "Days",
+        "Basic Hours",
+        "Overtime Hours",
+        "Basic Pay",
+        "Overtime Pay",
+        "Gross Pay",
+        "NSSF Employee",
+        "NSSF Employer",
+        "Deductions",
+        "Total Deductions",
+        "Net Salary",
+        "Status",
+    ]
+
+
+def payroll_row(salary):
+    return [
+        salary.employee.full_name,
+        salary.employee.company_number or "",
+        salary.employee.nssf_number or "",
+        salary.employee.bank_account or "",
+        salary.attendance_days,
+        salary.basic_hours,
+        salary.overtime_hours,
+        salary.basic_salary,
+        salary.overtime_pay,
+        salary.gross_pay,
+        salary.nssf_employee,
+        salary.nssf_employer,
+        salary.deductions,
+        salary.total_deductions,
+        salary.net_salary,
+        salary.get_status_display(),
+    ]
+
+
+@login_required
+@user_passes_test(is_manager)
+def payroll(request):
+    selected_month = request.POST.get("month") or request.GET.get("month") or timezone.localdate().isoformat()[:7]
+    start, end = month_bounds(f"{selected_month}-01")
+    if request.method == "POST":
+        generated = generate_payroll_from_attendance(start, end)
+        messages.success(request, f"Payroll generated for {len(generated)} employee(s) from attendance.")
+        return redirect(f"/payroll/?month={selected_month}")
+    generate_payroll_from_attendance(start, end)
+    salaries = payroll_queryset(start)
+    return render(
+        request,
+        "core/payroll.html",
+        {
+            "selected_month": selected_month,
+            "pay_period_start": start,
+            "pay_period_end": end,
+            "salaries": salaries,
+        },
+    )
+
+
+def audit_difference(primary, comparison):
+    return primary - comparison
+
+
+def audit_verdict(spent, budget, success_count, total_count, success_label):
+    if not total_count and not spent:
+        return "No activity recorded for this month."
+    if budget and spent > budget and not success_count:
+        return f"Overspending: costs are above budget and no {success_label} recorded."
+    if budget and spent > budget:
+        return f"Over budget, but producing {success_label}; review cost control."
+    if success_count:
+        return f"Benefiting: {success_count} {success_label} recorded within the tracked activity."
+    if spent:
+        return f"Spending recorded, but no {success_label} yet."
+    return f"No {success_label} recorded yet."
+
+
+@login_required
+@user_passes_test(is_manager)
+def audit_report(request):
+    selected_month = request.GET.get("month") or timezone.localdate().isoformat()[:7]
+    start, end = month_bounds(f"{selected_month}-01")
+
+    attendances = models.Attendance.objects.filter(date__range=(start, end), status__iexact="Present")
+    salaries = models.Salary.objects.filter(pay_period_start=start)
+    invoices = models.Invoice.objects.filter(billing_month__range=(start, end))
+    active_contracts = models.Contract.objects.filter(
+        status=models.StatusChoices.ACTIVE,
+        start_date__lte=end,
+    ).filter(Q(end_date__gte=start) | Q(end_date__isnull=True))
+    active_clients = models.Client.objects.filter(
+        contract_status=models.StatusChoices.ACTIVE,
+        contract_start_date__lte=end,
+    ).filter(Q(contract_end_date__gte=start) | Q(contract_end_date__isnull=True))
+    active_deployments = models.Deployment.objects.filter(
+        status=models.StatusChoices.ACTIVE,
+        start_date__lte=end,
+    ).filter(Q(end_date__gte=start) | Q(end_date__isnull=True))
+    recruitment_requisitions = models.RecruitmentRequisition.objects.filter(opening_date__range=(start, end))
+    recruitment_applications = models.RecruitmentApplication.objects.filter(date_received__range=(start, end))
+    job_offers = models.JobOffer.objects.filter(offer_date__range=(start, end))
+    trainings = models.Training.objects.filter(start_date__range=(start, end))
+
+    attendance_shift_count = attendances.count()
+    payroll_employee_count = salaries.values("employee_id").distinct().count()
+    salary_totals = salaries.aggregate(
+        gross=Coalesce(Sum("gross_pay"), Decimal("0.00")),
+        net=Coalesce(Sum("net_salary"), Decimal("0.00")),
+    )
+    invoice_totals = invoices.aggregate(
+        billed=Coalesce(Sum("total_amount"), Decimal("0.00")),
+        paid=Coalesce(Sum("paid_amount"), Decimal("0.00")),
+        balance=Coalesce(Sum("balance_amount"), Decimal("0.00")),
+    )
+    asset_totals = models.Asset.objects.aggregate(purchased=Coalesce(Sum("quantity"), 0))
+    assets_at_hand = models.Asset.objects.filter(Q(assigned_to__isnull=True) | Q(return_date__isnull=False)).aggregate(
+        total=Coalesce(Sum("quantity"), 0)
+    )["total"]
+    assets_deployed = models.Asset.objects.filter(assigned_to__isnull=False, return_date__isnull=True).aggregate(
+        total=Coalesce(Sum("quantity"), 0)
+    )["total"]
+
+    paid_invoices = invoices.filter(status=models.StatusChoices.PAID).count()
+    unpaid_invoices = invoices.exclude(status=models.StatusChoices.PAID).count()
+    invoiced_client_count = invoices.values("client_id").distinct().count()
+    invoiced_contract_count = invoices.filter(contract__isnull=False).values("contract_id").distinct().count()
+    active_client_count = active_clients.count()
+    active_contract_count = active_contracts.count()
+    employee_count = models.Employee.objects.count()
+    active_employee_count = models.Employee.objects.filter(status=models.StatusChoices.ACTIVE).count()
+    deployed_employee_count = active_deployments.values("employee_id").distinct().count()
+    recruitment_totals = recruitment_requisitions.aggregate(
+        budget=Coalesce(Sum("recruitment_budget"), Decimal("0.00")),
+        spent=Coalesce(Sum("actual_recruitment_cost"), Decimal("0.00")),
+        openings=Coalesce(Sum("number_of_openings"), 0),
+    )
+    accepted_offers = job_offers.filter(status=models.JobOffer.OfferStatus.ACCEPTED).count()
+    hired_applications = recruitment_applications.filter(status=models.RecruitmentApplication.ApplicationStatus.HIRED).count()
+    recruitment_success_count = accepted_offers + hired_applications
+    training_totals = trainings.aggregate(
+        budget=Coalesce(Sum("budgeted_cost"), Decimal("0.00")),
+        spent=Coalesce(Sum("training_cost"), Decimal("0.00")),
+        hours=Coalesce(Sum("duration_hours"), Decimal("0.00")),
+    )
+    successful_training_count = trainings.filter(
+        result__in=[models.Training.TrainingResult.COMPLETED, models.Training.TrainingResult.PASSED],
+    ).count()
+    expired_training_count = trainings.filter(result=models.Training.TrainingResult.EXPIRED).count()
+
+    audit_rows = [
+        {
+            "area": "Attendance vs Payroll",
+            "metric": "Present shifts recorded / employees paid",
+            "expected": attendance_shift_count,
+            "actual": payroll_employee_count,
+            "difference": audit_difference(attendance_shift_count, payroll_employee_count),
+            "amount": salary_totals["net"],
+            "note": "Net payroll generated for the month.",
+        },
+        {
+            "area": "Payroll",
+            "metric": "Gross salary generated",
+            "expected": salary_totals["gross"],
+            "actual": salary_totals["net"],
+            "difference": salary_totals["gross"] - salary_totals["net"],
+            "amount": salary_totals["net"],
+            "note": "Gross less net shows payroll deductions.",
+        },
+        {
+            "area": "Invoices",
+            "metric": "Paid / unpaid invoices",
+            "expected": paid_invoices,
+            "actual": unpaid_invoices,
+            "difference": paid_invoices - unpaid_invoices,
+            "amount": invoice_totals["balance"],
+            "note": "Amount shows unpaid invoice balance.",
+        },
+        {
+            "area": "Invoice Coverage",
+            "metric": "Invoiced / uninvoiced clients",
+            "expected": invoiced_client_count,
+            "actual": max(active_client_count - invoiced_client_count, 0),
+            "difference": invoiced_client_count - max(active_client_count - invoiced_client_count, 0),
+            "amount": invoice_totals["billed"],
+            "note": "Based on active clients in the selected month.",
+        },
+        {
+            "area": "Contract Coverage",
+            "metric": "Invoiced / uninvoiced contracts",
+            "expected": invoiced_contract_count,
+            "actual": max(active_contract_count - invoiced_contract_count, 0),
+            "difference": invoiced_contract_count - max(active_contract_count - invoiced_contract_count, 0),
+            "amount": invoice_totals["billed"],
+            "note": "Based on active contracts in the selected month.",
+        },
+        {
+            "area": "Equipment",
+            "metric": "Purchased / at hand",
+            "expected": asset_totals["purchased"],
+            "actual": assets_at_hand,
+            "difference": asset_totals["purchased"] - assets_at_hand,
+            "amount": None,
+            "note": f"{assets_deployed} equipment item(s) currently issued.",
+        },
+        {
+            "area": "Employees",
+            "metric": "Database / deployed",
+            "expected": employee_count,
+            "actual": deployed_employee_count,
+            "difference": employee_count - deployed_employee_count,
+            "amount": None,
+            "note": f"{active_employee_count} active employee(s) in the database.",
+        },
+        {
+            "area": "Recruitment",
+            "metric": "Budget / actual recruitment spend",
+            "expected": recruitment_totals["budget"],
+            "actual": recruitment_totals["spent"],
+            "difference": recruitment_totals["budget"] - recruitment_totals["spent"],
+            "amount": recruitment_totals["spent"],
+            "note": audit_verdict(
+                recruitment_totals["spent"],
+                recruitment_totals["budget"],
+                recruitment_success_count,
+                recruitment_applications.count(),
+                "hire(s) or accepted offer(s)",
+            ),
+        },
+        {
+            "area": "Recruitment Output",
+            "metric": "Openings / applications received",
+            "expected": recruitment_totals["openings"],
+            "actual": recruitment_applications.count(),
+            "difference": recruitment_applications.count() - recruitment_totals["openings"],
+            "amount": None,
+            "note": f"{accepted_offers} accepted offer(s), {hired_applications} hired application(s).",
+        },
+        {
+            "area": "Training",
+            "metric": "Budget / actual training spend",
+            "expected": training_totals["budget"],
+            "actual": training_totals["spent"],
+            "difference": training_totals["budget"] - training_totals["spent"],
+            "amount": training_totals["spent"],
+            "note": audit_verdict(
+                training_totals["spent"],
+                training_totals["budget"],
+                successful_training_count,
+                trainings.count(),
+                "completed or passed training(s)",
+            ),
+        },
+        {
+            "area": "Training Output",
+            "metric": "Training records / successful trainings",
+            "expected": trainings.count(),
+            "actual": successful_training_count,
+            "difference": successful_training_count - trainings.count(),
+            "amount": training_totals["hours"],
+            "note": f"{expired_training_count} expired training record(s); amount shows total training hours.",
+        },
+    ]
+
+    summary_cards = [
+        ("Attendance Shifts", attendance_shift_count, "fa-calendar-check"),
+        ("Net Payroll", salary_totals["net"], "fa-money-check-dollar"),
+        ("Invoice Balance", invoice_totals["balance"], "fa-file-invoice-dollar"),
+        ("Employees Deployed", deployed_employee_count, "fa-user-shield"),
+        ("Recruitment Spend", recruitment_totals["spent"], "fa-user-plus"),
+        ("Training Spend", training_totals["spent"], "fa-graduation-cap"),
+    ]
+
+    return render(
+        request,
+        "core/audit_report.html",
+        {
+            "selected_month": selected_month,
+            "pay_period_start": start,
+            "pay_period_end": end,
+            "audit_rows": audit_rows,
+            "summary_cards": summary_cards,
+            "invoice_totals": invoice_totals,
+        },
+    )
+
+
+def posted_lines_until(end_date=None):
+    lines = models.JournalLine.objects.select_related("account", "journal_entry").filter(
+        journal_entry__status=models.JournalEntry.EntryStatus.POSTED
+    )
+    if end_date:
+        lines = lines.filter(journal_entry__entry_date__lte=end_date)
+    return lines
+
+
+def account_balances(account_types=None, end_date=None):
+    ensure_default_accounts()
+    accounts = models.Account.objects.filter(is_active=True).order_by("account_code")
+    if account_types:
+        accounts = accounts.filter(account_type__in=account_types)
+    rows = []
+    for account in accounts:
+        lines = posted_lines_until(end_date).filter(account=account)
+        debit = sum(line.debit for line in lines)
+        credit = sum(line.credit for line in lines)
+        if account.account_type in {models.Account.AccountType.ASSET, models.Account.AccountType.EXPENSE}:
+            balance = debit - credit
+        else:
+            balance = credit - debit
+        rows.append({"account": account, "debit": debit, "credit": credit, "balance": balance})
+    return rows
+
+
+@login_required
+@user_passes_test(is_manager)
+def post_accounting_entries(request):
+    entries = post_all_accounting(posted_by=request.user)
+    messages.success(request, f"Posted {len(entries)} accounting journal entries.")
+    return redirect("core:trial_balance")
+
+
+@login_required
+@user_passes_test(is_manager)
+def general_ledger(request):
+    account_id = request.GET.get("account")
+    accounts = models.Account.objects.order_by("account_code")
+    lines = posted_lines_until().order_by("journal_entry__entry_date", "journal_entry__reference", "id")
+    selected_account = None
+    if account_id:
+        selected_account = get_object_or_404(models.Account, id=account_id)
+        lines = lines.filter(account=selected_account)
+    return render(
+        request,
+        "core/general_ledger.html",
+        {"accounts": accounts, "selected_account": selected_account, "selected_account_id": account_id or "", "lines": lines},
+    )
+
+
+@login_required
+@user_passes_test(is_manager)
+def trial_balance(request):
+    rows = account_balances()
+    return render(
+        request,
+        "core/trial_balance.html",
+        {
+            "rows": rows,
+            "total_debit": sum(row["debit"] for row in rows),
+            "total_credit": sum(row["credit"] for row in rows),
+        },
+    )
+
+
+@login_required
+@user_passes_test(is_manager)
+def balance_sheet(request):
+    asset_rows = account_balances([models.Account.AccountType.ASSET])
+    liability_rows = account_balances([models.Account.AccountType.LIABILITY])
+    equity_rows = account_balances([models.Account.AccountType.EQUITY])
+    return render(
+        request,
+        "core/balance_sheet.html",
+        {
+            "asset_rows": asset_rows,
+            "liability_rows": liability_rows,
+            "equity_rows": equity_rows,
+            "total_assets": sum(row["balance"] for row in asset_rows),
+            "total_liabilities": sum(row["balance"] for row in liability_rows),
+            "total_equity": sum(row["balance"] for row in equity_rows),
+        },
+    )
+
+
+@login_required
+@user_passes_test(is_manager)
+def income_statement(request):
+    income_rows = account_balances([models.Account.AccountType.INCOME])
+    expense_rows = account_balances([models.Account.AccountType.EXPENSE])
+    total_income = sum(row["balance"] for row in income_rows)
+    total_expenses = sum(row["balance"] for row in expense_rows)
+    return render(
+        request,
+        "core/income_statement.html",
+        {
+            "income_rows": income_rows,
+            "expense_rows": expense_rows,
+            "total_income": total_income,
+            "total_expenses": total_expenses,
+            "net_income": total_income - total_expenses,
+        },
+    )
+
+
+@login_required
+@user_passes_test(can_access_internal)
+def reports_center(request):
+    manager = is_manager(request.user)
+    report_groups = [
+        (
+            "Operations",
+            [
+                {
+                    "title": "Attendance Report",
+                    "description": "Query employee attendance by number and period.",
+                    "url_name": "core:attendance_report",
+                    "icon": "fa-table-list",
+                },
+                {
+                    "title": "Zonal Employees",
+                    "description": "View employee allocation by zone and supervisor.",
+                    "url_name": "core:zonal_guard_list",
+                    "icon": "fa-map-location-dot",
+                },
+                {
+                    "title": "Zone Shift Summary",
+                    "description": "Review scheduled guards by zone, site, date, and shift.",
+                    "url_name": "core:zone_shift_summary",
+                    "icon": "fa-chart-column",
+                },
+                {
+                    "title": "Asset Report",
+                    "description": "Track security equipment, condition, and assignments.",
+                    "url_name": "core:asset_report",
+                    "icon": "fa-boxes-stacked",
+                },
+            ],
+        ),
+        (
+            "Human Resources",
+            [
+                {
+                    "title": "Payroll",
+                    "description": "Generate monthly payroll from attendance and export summaries.",
+                    "url_name": "core:payroll",
+                    "icon": "fa-money-check-dollar",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Employee Records",
+                    "description": "Review workforce bio-data, roles, zones, and status.",
+                    "url_name": "core:record_list",
+                    "url_args": ["employees"],
+                    "icon": "fa-user-shield",
+                },
+                {
+                    "title": "Training Records",
+                    "description": "Review training completion, costs, certificates, and refresh dates.",
+                    "url_name": "core:record_list",
+                    "url_args": ["trainings"],
+                    "icon": "fa-graduation-cap",
+                },
+                {
+                    "title": "Recruitment Applications",
+                    "description": "Track candidate applications, screening, interviews, and offers.",
+                    "url_name": "core:record_list",
+                    "url_args": ["recruitment-applications"],
+                    "icon": "fa-user-plus",
+                },
+            ],
+        ),
+        (
+            "Finance",
+            [
+                {
+                    "title": "General Ledger",
+                    "description": "Review posted journal entries by account.",
+                    "url_name": "core:general_ledger",
+                    "icon": "fa-book",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Trial Balance",
+                    "description": "Confirm debit and credit balances across accounts.",
+                    "url_name": "core:trial_balance",
+                    "icon": "fa-scale-balanced",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Balance Sheet",
+                    "description": "Summarize assets, liabilities, and equity.",
+                    "url_name": "core:balance_sheet",
+                    "icon": "fa-table-columns",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Income Statement",
+                    "description": "Review revenue, expenses, and net income.",
+                    "url_name": "core:income_statement",
+                    "icon": "fa-chart-line",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Invoices",
+                    "description": "Review billing, VAT, totals, balances, and invoice status.",
+                    "url_name": "core:record_list",
+                    "url_args": ["invoices"],
+                    "icon": "fa-file-invoice-dollar",
+                },
+            ],
+        ),
+        (
+            "Admin",
+            [
+                {
+                    "title": "Audit Report",
+                    "description": "Compare attendance, payroll, invoices, assets, recruitment, and training.",
+                    "url_name": "core:audit_report",
+                    "icon": "fa-clipboard-check",
+                    "manager_only": True,
+                },
+            ],
+        ),
+    ]
+    visible_groups = []
+    for title, reports in report_groups:
+        visible_reports = [report for report in reports if manager or not report.get("manager_only")]
+        for report in visible_reports:
+            report["url"] = reverse(report["url_name"], args=report.get("url_args", []))
+        if visible_reports:
+            visible_groups.append((title, visible_reports))
+
+    summary_cards = [
+        ("Employees", models.Employee.objects.count(), "fa-user-shield"),
+        ("Sites", models.Site.objects.count(), "fa-building-shield"),
+        ("Attendance Records", models.Attendance.objects.count(), "fa-calendar-check"),
+        ("Invoices", models.Invoice.objects.count(), "fa-file-invoice-dollar"),
+        ("Assets", models.Asset.objects.count(), "fa-boxes-stacked"),
+        ("Incidents", models.Incident.objects.count(), "fa-triangle-exclamation"),
+    ]
+
+    return render(
+        request,
+        "core/reports/index.html",
+        {
+            "report_groups": visible_groups,
+            "summary_cards": summary_cards,
+        },
+    )
+
+
+@login_required
+@user_passes_test(is_manager)
+def payroll_export_excel(request):
+    selected_month = request.GET.get("month") or timezone.localdate().isoformat()[:7]
+    start, end = month_bounds(f"{selected_month}-01")
+    generate_payroll_from_attendance(start, end)
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Payroll"
+    worksheet.append([f"Payroll Register: {start} to {end}"])
+    worksheet.append([])
+    worksheet.append(payroll_headers())
+    for salary in payroll_queryset(start):
+        worksheet.append(payroll_row(salary))
+    for column_cells in worksheet.columns:
+        max_length = max(len(str(cell.value or "")) for cell in column_cells)
+        worksheet.column_dimensions[column_cells[0].column_letter].width = min(max_length + 2, 24)
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="payroll-{selected_month}.xlsx"'
+    return response
+
+
+@login_required
+@user_passes_test(is_manager)
+def payroll_export_pdf(request):
+    selected_month = request.GET.get("month") or timezone.localdate().isoformat()[:7]
+    start, end = month_bounds(f"{selected_month}-01")
+    generate_payroll_from_attendance(start, end)
+    output = BytesIO()
+    document = SimpleDocTemplate(output, pagesize=landscape(A4), rightMargin=24, leftMargin=24, topMargin=24, bottomMargin=24)
+    styles = getSampleStyleSheet()
+    elements = [Paragraph(f"Payroll Register: {start} to {end}", styles["Title"]), Spacer(1, 12)]
+    data = [payroll_headers()]
+    data.extend(payroll_row(salary) for salary in payroll_queryset(start))
+    table = Table(data, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2a3f54")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d9dee4")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    elements.append(table)
+    document.build(elements)
+    response = HttpResponse(output.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="payroll-{selected_month}.pdf"'
+    return response
+
+
+DEPLOYMENT_EXPORT_HEADERS = [
+    "employee_number",
+    "employee_name",
+    "client",
+    "site_code",
+    "site_name",
+    "shift_code",
+    "shift_name",
+    "supervisor_number",
+    "supervisor_name",
+    "start_date",
+    "end_date",
+    "status",
+]
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def deployments_export_excel(request):
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Deployments"
+    worksheet.append(DEPLOYMENT_EXPORT_HEADERS)
+    deployments = models.Deployment.objects.select_related(
+        "employee",
+        "client",
+        "site",
+        "shift",
+        "supervisor",
+    ).order_by("-start_date", "employee__first_name", "employee__last_name")
+    for deployment in deployments:
+        worksheet.append(
+            [
+                deployment.employee.company_number,
+                deployment.employee.full_name,
+                deployment.client.client_name,
+                deployment.site.site_code,
+                deployment.site.site_name,
+                deployment.shift.code,
+                deployment.shift.shift_name,
+                deployment.supervisor.company_number if deployment.supervisor else "",
+                deployment.supervisor.full_name if deployment.supervisor else "",
+                deployment.start_date,
+                deployment.end_date,
+                deployment.status,
+            ]
+        )
+    for column_cells in worksheet.columns:
+        max_length = max(len(str(cell.value or "")) for cell in column_cells)
+        worksheet.column_dimensions[column_cells[0].column_letter].width = min(max_length + 2, 28)
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="deployments.xlsx"'
+    return response
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def deployments_import_excel(request):
+    if request.method == "POST":
+        deployment_file = request.FILES.get("deployment_file")
+        if not deployment_file:
+            messages.error(request, "Please choose an Excel deployment file to upload.")
+            return redirect("core:deployments_import_excel")
+        try:
+            workbook = load_workbook(deployment_file, data_only=True)
+            worksheet = workbook.active
+        except Exception:
+            messages.error(request, "The uploaded file could not be read as an Excel workbook.")
+            return redirect("core:deployments_import_excel")
+
+        header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), [])
+        headers = {normalized_header(value): index for index, value in enumerate(header_row)}
+        required_groups = [
+            ("employee_number", "company_number", "guard_company_number"),
+            ("site_code", "site", "site_name"),
+            ("shift_code", "shift", "shift_name"),
+            ("start_date", "deployment_date"),
+        ]
+        missing = [group[0] for group in required_groups if not any(name in headers for name in group)]
+        if missing:
+            messages.error(request, "Missing required deployment columns: " + ", ".join(missing).replace("_", " "))
+            return redirect("core:deployments_import_excel")
+
+        status_values = {choice.value for choice in models.StatusChoices}
+        status_labels = {choice.label.lower(): choice.value for choice in models.StatusChoices}
+        created_count = 0
+        updated_count = 0
+        skipped_rows = []
+
+        for row_number, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+            if not any(row):
+                continue
+            employee_value = value_from_row(row, headers, "employee_number", "company_number", "guard_company_number")
+            site_value = value_from_row(row, headers, "site_code", "site", "site_name")
+            shift_value = value_from_row(row, headers, "shift_code", "shift", "shift_name")
+            supervisor_value = value_from_row(row, headers, "supervisor_number", "supervisor_company_number")
+            status_value = value_from_row(row, headers, "status").lower()
+            start_date = date_from_row(row, headers, "start_date", "deployment_date")
+            end_date = date_from_row(row, headers, "end_date")
+
+            employee = models.Employee.objects.filter(
+                Q(company_number__iexact=employee_value)
+                | Q(national_id__iexact=employee_value)
+                | Q(first_name__iexact=employee_value)
+                | Q(last_name__iexact=employee_value)
+            ).first()
+            site = models.Site.objects.select_related("client").filter(
+                Q(site_code__iexact=site_value) | Q(site_name__iexact=site_value)
+            ).first()
+            shift = models.Shift.objects.filter(Q(code__iexact=shift_value) | Q(shift_name__iexact=shift_value)).first()
+            supervisor = None
+            if supervisor_value:
+                supervisor = models.Employee.objects.filter(
+                    Q(company_number__iexact=supervisor_value)
+                    | Q(national_id__iexact=supervisor_value)
+                    | Q(first_name__iexact=supervisor_value)
+                    | Q(last_name__iexact=supervisor_value)
+                ).first()
+                if not supervisor:
+                    skipped_rows.append(f"Row {row_number}: supervisor not found")
+                    continue
+            status = status_labels.get(status_value, status_value or models.StatusChoices.ACTIVE)
+            if status not in status_values:
+                skipped_rows.append(f"Row {row_number}: invalid status")
+                continue
+            if not employee or not site or not shift or not start_date:
+                skipped_rows.append(
+                    f"Row {row_number}: "
+                    f"{'employee not found' if not employee else ''} "
+                    f"{'site not found' if not site else ''} "
+                    f"{'shift not found' if not shift else ''} "
+                    f"{'invalid start date' if not start_date else ''}".strip()
+                )
+                continue
+
+            _deployment, created = models.Deployment.objects.update_or_create(
+                employee=employee,
+                site=site,
+                shift=shift,
+                start_date=start_date,
+                defaults={
+                    "client": site.client,
+                    "supervisor": supervisor,
+                    "end_date": end_date,
+                    "status": status,
+                },
+            )
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
+
+        if created_count or updated_count:
+            messages.success(
+                request,
+                f"Deployments imported: {created_count} created, {updated_count} updated.",
+            )
+        if skipped_rows:
+            messages.error(request, "Skipped rows: " + "; ".join(skipped_rows[:8]))
+        return redirect("core:record_list", slug="deployments")
+
+    return render(request, "core/import_deployments.html")
+
+
+@login_required
+@user_passes_test(is_manager)
+def payslip_pdf(request, pk):
+    salary = get_object_or_404(models.Salary.objects.select_related("employee", "employee__position"), pk=pk)
+    refresh_payroll_for_date(salary.pay_period_start)
+    salary.refresh_from_db()
+    output = BytesIO()
+    document = SimpleDocTemplate(output, pagesize=A4, rightMargin=48, leftMargin=48, topMargin=48, bottomMargin=48)
+    styles = getSampleStyleSheet()
+    employee = salary.employee
+    rows = [
+        ["Employee", employee.full_name],
+        ["Company Number", employee.company_number or "-"],
+        ["NSSF Number", employee.nssf_number or "-"],
+        ["Bank Account", employee.bank_account or "-"],
+        ["Position", employee.position.position_title if employee.position else "-"],
+        ["Pay Period", f"{salary.pay_period_start} to {salary.pay_period_end}"],
+        ["Attendance Days", salary.attendance_days],
+        ["Basic Hours", salary.basic_hours],
+        ["Overtime Hours", salary.overtime_hours],
+        ["Basic Pay", salary.basic_salary],
+        ["Overtime Pay", salary.overtime_pay],
+        ["Allowances", salary.allowances],
+        ["Bonus", salary.bonus],
+        ["Gross Pay", salary.gross_pay],
+        ["NSSF Employee Deduction", salary.nssf_employee],
+        ["Other Deductions", salary.deductions],
+        ["Total Deductions", salary.total_deductions],
+        ["Employer NSSF Contribution", salary.nssf_employer],
+        ["Net Pay", salary.net_salary],
+    ]
+    table = Table(rows, colWidths=[180, 260])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f4f6f8")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d9dee4")),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    elements = [Paragraph("Employee Payslip", styles["Title"]), Spacer(1, 8), table]
+    document.build(elements)
+    response = HttpResponse(output.getvalue(), content_type="application/pdf")
+    filename = f"payslip-{employee.company_number or employee.id}-{salary.pay_period_start}.pdf"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def record_list(request, slug):
+    if not can_manage_slug(request.user, slug):
+        return HttpResponseForbidden("You do not have permission to access this page.")
+    config = get_model_config(slug)
+    queryset = scoped_queryset(request.user, slug, config.model.objects.all())
+    search_query = request.GET.get("q", "").strip()
+    rows = []
+
+    if search_query:
+        search_text = search_query.lower()
+        queryset = [
+            obj
+            for obj in queryset
+            if search_text in str(obj).lower()
+            or any(search_text in str(column_value(obj, column)).lower() for column in config.columns)
+        ]
+
+    for obj in queryset[:200]:
+        rows.append(
+            {
+                "object": obj,
+                "values": [column_value(obj, column) for column in config.columns],
+            }
+        )
+
+    return render(
+        request,
+        "core/record_list.html",
+        {
+            "slug": slug,
+            "config": config,
+            "columns": config.columns,
+            "column_labels": [column_label(column) for column in config.columns],
+            "rows": rows,
+            "search_query": search_query,
+            "can_add_record": is_manager(request.user) or is_supervisor(request.user),
+            "can_edit_record": is_manager(request.user) or is_supervisor(request.user),
+            "can_delete_record": is_manager(request.user) or is_supervisor(request.user),
+        },
+    )
+
+
+@login_required
+def record_create(request, slug):
+    if not can_manage_slug(request.user, slug):
+        return HttpResponseForbidden("You do not have permission to add this record.")
+    if slug == "guard-schedules":
+        messages.info(request, "Guard schedules are managed from the attendance screen.")
+        return redirect("core:attendances")
+    config = get_model_config(slug)
+    form_class = build_model_form(config.model)
+    form = form_class(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        instance = form.save(commit=False)
+        if hasattr(instance, "allocated_by_id") and not instance.allocated_by_id:
+            instance.allocated_by = request.user
+        instance.save()
+        form.save_m2m()
+        messages.success(request, f"{config.title} record added successfully.")
+        return redirect("core:record_list", slug=slug)
+    template = "core/invoice_form.html" if config.model is models.Invoice else "core/record_form.html"
+    return render(request, template, {"slug": slug, "config": config, "form": form, "mode": "Add"})
+
+
+@login_required
+def record_update(request, slug, pk):
+    if not can_manage_slug(request.user, slug):
+        return HttpResponseForbidden("You do not have permission to edit this record.")
+    if slug == "guard-schedules":
+        messages.info(request, "Guard schedules are managed from the attendance screen.")
+        return redirect("core:attendances")
+    config = get_model_config(slug)
+    instance = get_object_or_404(scoped_queryset(request.user, slug, config.model.objects.all()), pk=pk)
+    form_class = build_model_form(config.model)
+    form = form_class(request.POST or None, request.FILES or None, instance=instance)
+    if request.method == "POST" and form.is_valid():
+        updated_instance = form.save(commit=False)
+        updated_instance.save()
+        form.save_m2m()
+        messages.success(request, f"{config.title} record updated successfully.")
+        return redirect("core:record_list", slug=slug)
+    template = "core/invoice_form.html" if config.model is models.Invoice else "core/record_form.html"
+    return render(
+        request,
+        template,
+        {"slug": slug, "config": config, "form": form, "mode": "Edit", "record": instance},
+    )
+
+
+@login_required
+def record_delete(request, slug, pk):
+    if not can_manage_slug(request.user, slug):
+        return HttpResponseForbidden("You do not have permission to delete this record.")
+    if slug == "guard-schedules":
+        messages.info(request, "Guard schedules are managed from the attendance screen.")
+        return redirect("core:attendances")
+    config = get_model_config(slug)
+    instance = get_object_or_404(scoped_queryset(request.user, slug, config.model.objects.all()), pk=pk)
+    if request.method == "POST":
+        try:
+            instance.delete()
+            messages.success(request, f"{config.title} record deleted successfully.")
+        except ProtectedError:
+            messages.error(request, "This record is linked to other records and cannot be deleted.")
+        return redirect("core:record_list", slug=slug)
+    return render(
+        request,
+        "core/record_confirm_delete.html",
+        {"slug": slug, "config": config, "record": instance},
+    )
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def attendances(request):
+    selected_site_id = request.GET.get("site") or request.POST.get("site")
+    selected_date = request.GET.get("date") or request.POST.get("date") or timezone.localdate().isoformat()
+    selected_site = None
+    schedules = models.GuardSchedule.objects.none()
+
+    site_queryset = models.Site.objects.select_related("client").order_by("site_name")
+    if selected_site_id:
+        selected_site = site_queryset.filter(id=selected_site_id).first()
+        if not selected_site:
+            return HttpResponseForbidden("You do not have permission to access this site.")
+
+    parsed_date = parse_date(selected_date) if selected_date else None
+
+    if parsed_date:
+        deployments = models.Deployment.objects.select_related("employee", "site", "shift").filter(
+            status=models.StatusChoices.ACTIVE,
+            start_date__lte=parsed_date,
+        ).filter(
+            Q(end_date__gte=parsed_date) | Q(end_date__isnull=True)
+        )
+        if selected_site:
+            deployments = deployments.filter(site=selected_site)
+
+        skipped_contract_limits = []
+        for deployment in deployments:
+            existing_schedule = models.GuardSchedule.objects.filter(
+                deployment=deployment,
+                shift_date=parsed_date,
+            ).first()
+            if not existing_schedule and contract_schedule_limit_reached(
+                deployment.site,
+                deployment.shift,
+                parsed_date,
+                deployment=deployment,
+            ):
+                skipped_contract_limits.append(contract_limit_message(deployment.site, deployment.shift, parsed_date))
+                continue
+            models.GuardSchedule.objects.get_or_create(
+                deployment=deployment,
+                shift_date=parsed_date,
+                defaults={
+                    "employee": deployment.employee,
+                    "site": deployment.site,
+                    "shift": deployment.shift,
+                },
+            )
+        if skipped_contract_limits:
+            messages.error(request, "Skipped schedules beyond contract: " + "; ".join(sorted(set(skipped_contract_limits))[:5]))
+
+        schedules = scoped_queryset(
+            request.user,
+            "guard-schedules",
+            models.GuardSchedule.objects.select_related(
+                "employee",
+                "replacement_employee",
+                "site",
+                "shift",
+                "attendance",
+            ),
+        ).filter(shift_date=parsed_date)
+        if selected_site:
+            schedules = schedules.filter(site=selected_site)
+        schedules = schedules.order_by(
+            "shift__start_time", "employee__first_name", "employee__last_name"
+        )
+
+    if request.method == "POST":
+        schedule_ids = request.POST.getlist("schedule_ids")
+        allowed_schedules = scoped_queryset(
+            request.user,
+            "guard-schedules",
+            models.GuardSchedule.objects.select_related("employee", "shift"),
+        )
+        allowed_employees = models.Employee.objects.filter(company_number__isnull=False).exclude(company_number="").order_by(
+            "first_name", "last_name", "company_number"
+        )
+
+        for schedule_id in schedule_ids:
+            schedule = get_object_or_404(allowed_schedules.select_related("employee"), id=schedule_id)
+            selected_employee_id = request.POST.get(f"scheduled_guard_{schedule_id}") or schedule.employee_id
+            selected_employee = get_object_or_404(allowed_employees, id=selected_employee_id)
+            schedule.employee = selected_employee
+            present_value = request.POST.get(f"present_{schedule_id}", "")
+            is_present = present_value.lower() in {"on", "yes", "true", "1"}
+            replacement_employee_id = request.POST.get(f"replacement_guard_{schedule_id}") or ""
+            reason = request.POST.get(f"reason_{schedule_id}", "").strip()
+            attendance, _created = models.Attendance.objects.update_or_create(
+                employee=selected_employee,
+                date=schedule.shift_date,
+                shift=schedule.shift,
+                defaults={
+                    "schedule": schedule,
+                    "status": "Present" if is_present else "Absent",
+                    "capture_source": models.Attendance.CaptureSource.MANUAL,
+                    "captured_by": request.user,
+                    "captured_at": timezone.now(),
+                    "remarks": reason,
+                },
+            )
+            schedule.replacement_employee = None
+            schedule.replacement_reason = ""
+            if is_present:
+                schedule.status = models.GuardSchedule.ScheduleStatus.COMPLETED
+                schedule.notes = reason
+            else:
+                schedule.status = models.GuardSchedule.ScheduleStatus.MISSED
+                schedule.replacement_reason = reason
+                schedule.notes = f"Absent: {reason}" if reason else "Absent"
+                if replacement_employee_id:
+                    replacement_employee = get_object_or_404(allowed_employees, id=replacement_employee_id)
+                    schedule.replacement_employee = replacement_employee
+                    models.Attendance.objects.update_or_create(
+                        employee=replacement_employee,
+                        date=schedule.shift_date,
+                        shift=schedule.shift,
+                        defaults={
+                            "schedule": None,
+                            "status": "Present",
+                            "capture_source": models.Attendance.CaptureSource.MANUAL,
+                            "captured_by": request.user,
+                            "captured_at": timezone.now(),
+                            "remarks": f"Replacement for {selected_employee.full_name}. {reason}".strip(),
+                        },
+                    )
+            schedule.save(
+                update_fields=[
+                    "employee",
+                    "replacement_employee",
+                    "replacement_reason",
+                    "status",
+                    "notes",
+                    "updated_at",
+                ]
+            )
+
+        if parsed_date:
+            refresh_payroll_for_date(parsed_date)
+        messages.success(request, "Attendance saved successfully.")
+        return redirect(f"/attendances/?site={selected_site_id or ''}&date={selected_date or ''}")
+
+    context = {
+        "sites": site_queryset,
+        "selected_site_id": selected_site_id or "",
+        "selected_date": selected_date or "",
+        "selected_site": selected_site,
+        "schedules": schedules,
+        "guards": models.Employee.objects.filter(company_number__isnull=False).exclude(company_number="").order_by(
+            "first_name", "last_name", "company_number"
+        ),
+    }
+    return render(request, "core/attendances.html", context)
+
+
+def normalized_header(value):
+    return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def value_from_row(row, headers, *names):
+    for name in names:
+        index = headers.get(name)
+        if index is not None:
+            value = row[index]
+            if value not in (None, ""):
+                return str(value).strip()
+    return ""
+
+
+def date_from_row(row, headers, *names):
+    for name in names:
+        index = headers.get(name)
+        if index is not None:
+            value = row[index]
+            if value in (None, ""):
+                continue
+            if hasattr(value, "date"):
+                return value.date()
+            parsed = parse_date(str(value).strip())
+            if parsed:
+                return parsed
+    return None
+
+
+def get_import_client():
+    return models.Client.objects.get_or_create(
+        client_name="Imported Duty Roster Client",
+        defaults={
+            "contact_person": "Imported roster",
+            "phone_number": "0000000000",
+            "contract_start_date": timezone.localdate(),
+            "contract_status": models.StatusChoices.ACTIVE,
+        },
+    )[0]
+
+
+def get_import_contract(client, site=None, start_date=None, end_date=None):
+    suffix = f"-{site.site_code}" if site and site.site_code else ""
+    contract_number = f"IMP-{client.id:05d}{suffix}"
+    return models.Contract.objects.get_or_create(
+        contract_number=contract_number[:80],
+        defaults={
+            "client": client,
+            "service_type": "Manned Guarding",
+            "start_date": start_date or timezone.localdate(),
+            "end_date": end_date,
+            "status": models.StatusChoices.ACTIVE,
+        },
+    )[0]
+
+
+def ensure_contract_requirement(site, shift_date, required_guards=1, shift=None, end_date=None):
+    contract = get_import_contract(site.client, site=site, start_date=shift_date, end_date=end_date)
+    requirement, created = models.ContractSiteRequirement.objects.get_or_create(
+        contract=contract,
+        site=site,
+        shift=shift,
+        start_date=contract.start_date,
+        defaults={
+            "required_guards": required_guards,
+            "end_date": end_date or contract.end_date,
+            "status": models.StatusChoices.ACTIVE,
+            "notes": "Created from imported duty roster.",
+        },
+    )
+    if requirement.required_guards < required_guards:
+        requirement.required_guards = required_guards
+        requirement.save(update_fields=["required_guards", "updated_at"])
+    return requirement
+
+
+def get_import_guard(pers_no, guard_name, row_number=None, site_code=""):
+    role = models.Role.objects.get_or_create(
+        role_name="Imported Guard",
+        defaults={"department": models.DepartmentChoices.OPERATIONS},
+    )[0]
+    position = models.Position.objects.get_or_create(
+        position_title="Imported Security Guard",
+        defaults={"department": models.DepartmentChoices.OPERATIONS},
+    )[0]
+    clean_pers_no = str(pers_no or "").strip() or f"ROW-{row_number}"
+    company_number = clean_pers_no
+    if models.Employee.objects.filter(company_number=company_number).exclude(first_name__iexact=str(guard_name).strip()).exists():
+        company_number = f"{site_code}-{clean_pers_no}-{row_number}".strip("-")
+    existing_employee = models.Employee.objects.filter(company_number=company_number).first()
+    if existing_employee:
+        return existing_employee
+
+    parts = str(guard_name or "Imported Guard").strip().split()
+    first_name = parts[0] if parts else "Imported"
+    last_name = " ".join(parts[1:]) if len(parts) > 1 else "Guard"
+    employee, _created = models.Employee.objects.get_or_create(
+        national_id=f"IMPORTED-{company_number}",
+        defaults={
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone_number": "0000000000",
+            "email": f"imported-{company_number}".lower().replace(" ", "-") + "@demo.test",
+            "role": role,
+            "position": position,
+            "status": models.StatusChoices.ACTIVE,
+            "company_number": company_number,
+        },
+    )
+    if not employee.company_number:
+        employee.company_number = company_number
+        employee.save(update_fields=["company_number", "updated_at"])
+    return employee
+
+
+def get_import_shift(shift_code):
+    code = str(shift_code or "").strip().upper()
+    if code in {"D", "DAY"}:
+        return models.Shift.objects.get_or_create(
+            code="D",
+            defaults={"shift_name": "Day", "start_time": "08:00", "end_time": "20:00"},
+        )[0]
+    if code in {"N", "NIGHT"}:
+        return models.Shift.objects.get_or_create(
+            code="N",
+            defaults={"shift_name": "Night", "start_time": "18:00", "end_time": "06:00"},
+        )[0]
+    return models.Shift.objects.get_or_create(
+        code=code,
+        defaults={"shift_name": code.title(), "start_time": "08:00", "end_time": "17:00"},
+    )[0]
+
+
+def roster_header_date(header, period_start, period_end):
+    match = re.search(r"/(\d{1,2})$", str(header or "").strip())
+    if not match:
+        return None
+    day = int(match.group(1))
+    candidate = period_start.replace(day=day)
+    if candidate < period_start:
+        if candidate.month == 12:
+            candidate = candidate.replace(year=candidate.year + 1, month=1)
+        else:
+            candidate = candidate.replace(month=candidate.month + 1)
+    if period_start <= candidate <= period_end:
+        return candidate
+    return None
+
+
+def import_saracen_roster(worksheet):
+    client = get_import_client()
+    created_schedules = 0
+    updated_schedules = 0
+    skipped_rows = []
+    current_site = None
+    period_start = None
+    period_end = None
+    header_row = None
+    date_columns = []
+
+    rows = list(worksheet.iter_rows(values_only=True))
+    for row_number, row in enumerate(rows, start=1):
+        first_cell = str(row[0] or "").strip()
+        site_match = re.search(r"Site Roster for\s+([^:]+):\s*(.+)$", first_cell, re.IGNORECASE)
+        if site_match:
+            site_code = site_match.group(1).strip()
+            site_name = site_match.group(2).strip()
+            current_site = models.Site.objects.update_or_create(
+                client=client,
+                site_name=site_name,
+                defaults={
+                    "site_code": site_code[:20],
+                    "site_address": site_name,
+                    "city": "Fort Portal",
+                    "state": "Western",
+                    "security_level": "Imported",
+                },
+            )[0]
+            if period_start:
+                ensure_contract_requirement(current_site, period_start, required_guards=1, end_date=period_end)
+            header_row = None
+            date_columns = []
+            continue
+
+        period_match = re.search(r"Scheduled Period:\s*(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})", first_cell)
+        if period_match:
+            period_start = parse_date(period_match.group(1))
+            period_end = parse_date(period_match.group(2))
+            if current_site:
+                ensure_contract_requirement(current_site, period_start, required_guards=1, end_date=period_end)
+            continue
+
+        normalized_cells = [normalized_header(value) for value in row]
+        if "pers_no" in normalized_cells and "name" in normalized_cells:
+            header_row = {header: index for index, header in enumerate(normalized_cells)}
+            date_columns = []
+            for index, value in enumerate(row):
+                date_value = roster_header_date(value, period_start, period_end) if period_start and period_end else None
+                if date_value:
+                    date_columns.append((index, date_value))
+            continue
+
+        if not current_site or not header_row or not date_columns:
+            continue
+
+        pers_no_index = header_row.get("pers_no")
+        name_index = header_row.get("name")
+        pers_no = row[pers_no_index] if pers_no_index is not None else ""
+        guard_name = row[name_index] if name_index is not None else ""
+        if not pers_no and not guard_name:
+            continue
+
+        employee = get_import_guard(pers_no, guard_name, row_number=row_number, site_code=current_site.site_code)
+        for column_index, shift_code in date_columns:
+            code = str(row[column_index] or "").strip().upper()
+            if not code or code == "O":
+                continue
+            shift = get_import_shift(code)
+            existing_schedule = models.GuardSchedule.objects.filter(
+                employee=employee,
+                site=current_site,
+                shift=shift,
+                shift_date=shift_code,
+            ).first()
+            if not existing_schedule and contract_schedule_limit_reached(current_site, shift, shift_code):
+                skipped_rows.append(f"Row {row_number}: {contract_limit_message(current_site, shift, shift_code)}")
+                continue
+            deployment, _created = models.Deployment.objects.update_or_create(
+                employee=employee,
+                site=current_site,
+                start_date=shift_code,
+                defaults={
+                    "client": current_site.client,
+                    "shift": shift,
+                    "end_date": None,
+                    "status": models.StatusChoices.ACTIVE,
+                },
+            )
+            _schedule, created = models.GuardSchedule.objects.update_or_create(
+                deployment=deployment,
+                shift_date=shift_code,
+                defaults={
+                    "employee": employee,
+                    "site": current_site,
+                    "shift": shift,
+                    "status": models.GuardSchedule.ScheduleStatus.SCHEDULED,
+                    "notes": "Imported from Saracen duty roster.",
+                },
+            )
+            if created:
+                created_schedules += 1
+            else:
+                updated_schedules += 1
+
+    return created_schedules, updated_schedules, skipped_rows
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def upload_duty_roster(request):
+    if request.method == "POST":
+        roster_file = request.FILES.get("roster_file")
+        if not roster_file:
+            messages.error(request, "Please choose an Excel duty roster to upload.")
+            return redirect("core:upload_duty_roster")
+        try:
+            workbook = load_workbook(roster_file, data_only=True)
+            worksheet = workbook.active
+        except Exception:
+            messages.error(request, "The uploaded file could not be read as an Excel workbook.")
+            return redirect("core:upload_duty_roster")
+
+        header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), [])
+        headers = {normalized_header(value): index for index, value in enumerate(header_row)}
+        required_groups = [
+            ("guard_company_number", "company_number", "employee_number", "guard_badge", "badge_number", "guard"),
+            ("site_code", "site", "site_name"),
+            ("shift", "shift_name"),
+            ("shift_date", "date", "duty_date"),
+        ]
+        missing = [group[0] for group in required_groups if not any(name in headers for name in group)]
+        if missing:
+            has_saracen_blocks = any(
+                "site roster for" in str(row[0] or "").lower()
+                for row in worksheet.iter_rows(values_only=True)
+                if row
+            )
+            if has_saracen_blocks:
+                created_schedules, updated_schedules, skipped_rows = import_saracen_roster(worksheet)
+                if created_schedules or updated_schedules:
+                    messages.success(
+                        request,
+                        f"Duty roster imported: {created_schedules} schedules created, {updated_schedules} updated.",
+                    )
+                else:
+                    messages.error(request, "No duty schedules were imported from this workbook.")
+                if skipped_rows:
+                    messages.error(request, "Skipped rows: " + "; ".join(skipped_rows[:8]))
+                return redirect("core:attendances")
+            else:
+                messages.error(
+                    request,
+                    "Missing required roster columns: " + ", ".join(missing).replace("_", " "),
+                )
+                return redirect("core:upload_duty_roster")
+
+        created_schedules = 0
+        updated_schedules = 0
+        skipped_rows = []
+
+        for row_number, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+            if not any(row):
+                continue
+            guard_value = value_from_row(
+                row,
+                headers,
+                "guard_company_number",
+                "company_number",
+                "employee_number",
+                "guard_badge",
+                "badge_number",
+                "guard",
+            )
+            site_value = value_from_row(row, headers, "site_code", "site", "site_name")
+            shift_value = value_from_row(row, headers, "shift", "shift_name")
+            date_value = value_from_row(row, headers, "shift_date", "date", "duty_date")
+
+            shift_date = parse_date(date_value)
+            if not shift_date and hasattr(row[headers.get("shift_date", headers.get("date", headers.get("duty_date")))], "date"):
+                shift_date = row[headers.get("shift_date", headers.get("date", headers.get("duty_date")))].date()
+            if not shift_date:
+                skipped_rows.append(f"Row {row_number}: invalid date")
+                continue
+
+            employee = models.Employee.objects.filter(
+                Q(company_number__iexact=guard_value)
+                | Q(national_id__iexact=guard_value)
+                | Q(first_name__iexact=guard_value)
+                | Q(last_name__iexact=guard_value)
+            ).first()
+            site = models.Site.objects.select_related("client").filter(
+                Q(site_code__iexact=site_value) | Q(site_name__iexact=site_value)
+            ).first()
+            shift = models.Shift.objects.filter(Q(shift_name__iexact=shift_value) | Q(code__iexact=shift_value)).first()
+
+            if not employee or not site or not shift:
+                skipped_rows.append(
+                    f"Row {row_number}: "
+                    f"{'guard not found' if not employee else ''} "
+                    f"{'site not found' if not site else ''} "
+                    f"{'shift not found' if not shift else ''}".strip()
+                )
+                continue
+
+            ensure_contract_requirement(site, shift_date, required_guards=site.required_guards_per_shift or 1)
+            existing_schedule = models.GuardSchedule.objects.filter(
+                employee=employee,
+                site=site,
+                shift=shift,
+                shift_date=shift_date,
+            ).first()
+            if not existing_schedule and contract_schedule_limit_reached(site, shift, shift_date):
+                skipped_rows.append(f"Row {row_number}: {contract_limit_message(site, shift, shift_date)}")
+                continue
+
+            supervisor = models.ZoneSiteAllocation.objects.filter(
+                site=site,
+                status=models.StatusChoices.ACTIVE,
+                end_date__isnull=True,
+            ).select_related("zone__supervisor").first()
+            deployment, _created = models.Deployment.objects.update_or_create(
+                employee=employee,
+                site=site,
+                start_date=shift_date,
+                defaults={
+                    "client": site.client,
+                    "supervisor": supervisor.zone.supervisor if supervisor else None,
+                    "shift": shift,
+                    "end_date": None,
+                    "status": models.StatusChoices.ACTIVE,
+                },
+            )
+            schedule, created = models.GuardSchedule.objects.update_or_create(
+                deployment=deployment,
+                shift_date=shift_date,
+                defaults={
+                    "employee": employee,
+                    "site": site,
+                    "shift": shift,
+                    "status": models.GuardSchedule.ScheduleStatus.SCHEDULED,
+                    "notes": "Imported from Excel duty roster.",
+                },
+            )
+            if created:
+                created_schedules += 1
+            else:
+                updated_schedules += 1
+
+        if created_schedules or updated_schedules:
+            messages.success(
+                request,
+                f"Duty roster imported: {created_schedules} schedules created, {updated_schedules} updated.",
+            )
+        if skipped_rows:
+            messages.error(request, "Skipped rows: " + "; ".join(skipped_rows[:8]))
+        return redirect("core:attendances")
+
+    return render(request, "core/upload_duty_roster.html")
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def zonal_guard_list(request):
+    zones = models.Zone.objects.select_related("supervisor").prefetch_related(
+        "employee_allocations__employee", "site_allocations__site"
+    )
+    return render(request, "core/zonal_guard_list.html", {"zones": zones})
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def zone_shift_summary(request):
+    selected_date = request.GET.get("date") or timezone.localdate().isoformat()
+    selected_zone_id = request.GET.get("zone") or ""
+    parsed_date = parse_date(selected_date) or timezone.localdate()
+
+    zones = models.Zone.objects.select_related("supervisor").order_by("zone_name")
+    if selected_zone_id:
+        zones = zones.filter(id=selected_zone_id)
+
+    summary_rows = []
+    total_scheduled = 0
+    total_present = 0
+    total_absent = 0
+    total_replacements = 0
+
+    for zone in zones:
+        site_ids = models.ZoneSiteAllocation.objects.filter(
+            zone=zone,
+            status=models.StatusChoices.ACTIVE,
+            end_date__isnull=True,
+        ).values_list("site_id", flat=True)
+        schedules = models.GuardSchedule.objects.select_related(
+            "employee",
+            "replacement_employee",
+            "site",
+            "shift",
+            "attendance",
+        ).filter(site_id__in=site_ids, shift_date=parsed_date)
+
+        shifts = {}
+        for schedule in schedules:
+            shift_key = schedule.shift_id
+            shift_name = schedule.shift.shift_name
+            row = shifts.setdefault(
+                shift_key,
+                {
+                    "zone": zone,
+                    "shift": shift_name,
+                    "shift_code": schedule.shift.code or shift_name,
+                    "basic_hours": schedule.shift.basic_hours,
+                    "overtime_hours": schedule.shift.daily_overtime_hours,
+                    "scheduled": 0,
+                    "present": 0,
+                    "absent": 0,
+                    "replacements": 0,
+                    "guards": [],
+                },
+            )
+            row["scheduled"] += 1
+            try:
+                attendance = schedule.attendance
+            except models.Attendance.DoesNotExist:
+                attendance = None
+            attendance_status = attendance.status if attendance else ""
+            if attendance_status == "Present":
+                row["present"] += 1
+            elif attendance_status == "Absent" or schedule.status == models.GuardSchedule.ScheduleStatus.MISSED:
+                row["absent"] += 1
+            if schedule.replacement_employee_id:
+                row["replacements"] += 1
+            row["guards"].append(
+                {
+                    "scheduled": schedule.employee.full_name,
+                    "site": schedule.site.site_name,
+                    "status": attendance_status or schedule.get_status_display(),
+                    "replacement": schedule.replacement_employee.full_name if schedule.replacement_employee else "",
+                    "reason": schedule.replacement_reason,
+                }
+            )
+
+        for row in shifts.values():
+            total_scheduled += row["scheduled"]
+            total_present += row["present"]
+            total_absent += row["absent"]
+            total_replacements += row["replacements"]
+            summary_rows.append(row)
+
+    return render(
+        request,
+        "core/zone_shift_summary.html",
+        {
+            "zones": models.Zone.objects.order_by("zone_name"),
+            "selected_date": parsed_date.isoformat(),
+            "selected_zone_id": selected_zone_id,
+            "summary_rows": summary_rows,
+            "totals": {
+                "scheduled": total_scheduled,
+                "present": total_present,
+                "absent": total_absent,
+                "replacements": total_replacements,
+            },
+        },
+    )
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def attendance_report(request):
+    employee_number = request.GET.get("employee_number", "").strip()
+    start_date = request.GET.get("start_date", "").strip()
+    end_date = request.GET.get("end_date", "").strip()
+    search_query = request.GET.get("q", "").strip()
+
+    start = parse_date(start_date) if start_date else timezone.localdate().replace(day=1)
+    end = parse_date(end_date) if end_date else timezone.localdate()
+
+    schedules = models.GuardSchedule.objects.select_related(
+        "employee",
+        "replacement_employee",
+        "site",
+        "shift",
+        "attendance",
+    ).filter(shift_date__range=(start, end))
+
+    if employee_number:
+        schedules = schedules.filter(
+            Q(employee__company_number__icontains=employee_number)
+            | Q(employee__national_id__icontains=employee_number)
+            | Q(employee__first_name__icontains=employee_number)
+            | Q(employee__last_name__icontains=employee_number)
+        )
+
+    rows = []
+    for schedule in schedules.order_by("shift_date", "site__site_name", "employee__first_name"):
+        try:
+            attendance = schedule.attendance
+        except models.Attendance.DoesNotExist:
+            attendance = None
+
+        scheduled_employee = f"{schedule.employee.company_number}-{schedule.employee.full_name}"
+        attended_employee = scheduled_employee if attendance and attendance.status == "Present" else "NONE"
+        replacement = "NONE"
+        if schedule.replacement_employee:
+            replacement = f"{schedule.replacement_employee.company_number}-{schedule.replacement_employee.full_name}"
+            attended_employee = replacement
+
+        row = {
+            "date_scheduled": schedule.shift_date,
+            "site_scheduled": f"({schedule.site.site_code}) {schedule.site.site_name}",
+            "scheduled_employee": scheduled_employee,
+            "shift_code": schedule.shift.code or schedule.shift.shift_name,
+            "basic_hours": schedule.shift.basic_hours,
+            "overtime_hours": schedule.shift.daily_overtime_hours,
+            "attendance": attended_employee,
+            "replacement": replacement,
+            "recorded_by": "system",
+            "date_recorded": attendance.updated_at if attendance else schedule.updated_at,
+        }
+        haystack = " ".join(str(value) for value in row.values()).lower()
+        if not search_query or search_query.lower() in haystack:
+            rows.append(row)
+
+    return render(
+        request,
+        "core/attendance_report.html",
+        {
+            "employee_number": employee_number,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "search_query": search_query,
+            "rows": rows,
+        },
+    )
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def asset_report(request):
+    assets = models.Asset.objects.select_related("assigned_to")
+    return render(request, "core/asset_report.html", {"assets": assets})

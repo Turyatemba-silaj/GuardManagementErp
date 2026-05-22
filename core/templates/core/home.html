@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sentinel Shield Security Company</title>
+    <style>
+        :root {
+            --ink: #132238;
+            --muted: #687588;
+            --line: #dde5ee;
+            --paper: #ffffff;
+            --mist: #f4f7fb;
+            --navy: #10243f;
+            --steel: #44647e;
+            --teal: #168a86;
+            --gold: #c28a35;
+            --green: #176b4d;
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--mist);
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.55;
+        }
+        a { color: inherit; }
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: rgba(255,255,255,.94);
+            border-bottom: 1px solid var(--line);
+            backdrop-filter: blur(12px);
+        }
+        .nav {
+            width: min(1180px, calc(100% - 32px));
+            min-height: 72px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            text-decoration: none;
+            font-weight: 800;
+            color: var(--navy);
+        }
+        .mark {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            color: #fff;
+            background: linear-gradient(135deg, var(--navy), var(--teal));
+            font-size: 20px;
+        }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .nav-links a {
+            text-decoration: none;
+            color: var(--steel);
+            font-weight: 700;
+        }
+        .portal-btn {
+            padding: 10px 14px;
+            border-radius: 6px;
+            background: var(--navy);
+            color: #fff !important;
+        }
+        .hero {
+            background:
+                linear-gradient(90deg, rgba(16,36,63,.92), rgba(16,36,63,.72) 48%, rgba(16,36,63,.12)),
+                radial-gradient(circle at 80% 30%, rgba(22,138,134,.55), transparent 30%),
+                linear-gradient(135deg, #10243f, #253e58 45%, #edf4f7);
+            color: #fff;
+        }
+        .hero-inner {
+            width: min(1180px, calc(100% - 32px));
+            min-height: 620px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(360px, .95fr);
+            align-items: center;
+            gap: 48px;
+            padding: 70px 0 54px;
+        }
+        .eyebrow {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 18px;
+            color: #d9ede9;
+            font-weight: 800;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+        .eyebrow::before {
+            content: "";
+            width: 36px;
+            height: 2px;
+            background: var(--gold);
+        }
+        h1 {
+            margin: 0;
+            max-width: 780px;
+            font-size: clamp(40px, 7vw, 76px);
+            line-height: 1.02;
+            letter-spacing: 0;
+        }
+        .hero-copy {
+            max-width: 620px;
+            margin: 20px 0 28px;
+            color: #e4ecf3;
+            font-size: 18px;
+        }
+        .hero-actions,
+        .section-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 11px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 800;
+        }
+        .btn-primary { background: var(--teal); color: #fff; }
+        .btn-light { background: #fff; color: var(--navy); }
+        .btn-outline { border: 1px solid rgba(255,255,255,.45); color: #fff; }
+        .visual {
+            min-height: 430px;
+            position: relative;
+            border: 1px solid rgba(255,255,255,.24);
+            border-radius: 18px;
+            overflow: hidden;
+            background:
+                linear-gradient(160deg, rgba(255,255,255,.12), rgba(255,255,255,.02)),
+                repeating-linear-gradient(90deg, rgba(255,255,255,.08) 0 1px, transparent 1px 80px);
+            box-shadow: 0 24px 70px rgba(0,0,0,.28);
+        }
+        .visual::before {
+            content: "";
+            position: absolute;
+            inset: 32px;
+            border: 1px solid rgba(255,255,255,.25);
+            border-radius: 14px;
+        }
+        .guard-shape {
+            position: absolute;
+            right: 12%;
+            bottom: 0;
+            width: 190px;
+            height: 330px;
+            background: linear-gradient(#263b54, #0c1b2e);
+            border-radius: 88px 88px 18px 18px;
+        }
+        .guard-shape::before {
+            content: "";
+            position: absolute;
+            top: -56px;
+            left: 48px;
+            width: 92px;
+            height: 92px;
+            border-radius: 50%;
+            background: #c99866;
+            box-shadow: 0 -22px 0 -8px #182a41;
+        }
+        .camera {
+            position: absolute;
+            left: 44px;
+            top: 58px;
+            width: 124px;
+            height: 70px;
+            border-radius: 12px;
+            background: #e8eef3;
+            transform: rotate(-8deg);
+        }
+        .camera::before {
+            content: "";
+            position: absolute;
+            right: -40px;
+            top: 18px;
+            width: 48px;
+            height: 34px;
+            background: #b8c7d3;
+            clip-path: polygon(0 0, 100% 20%, 100% 80%, 0 100%);
+        }
+        .status-card {
+            position: absolute;
+            left: 40px;
+            bottom: 38px;
+            width: min(280px, calc(100% - 80px));
+            padding: 18px;
+            border-radius: 14px;
+            background: rgba(255,255,255,.94);
+            color: var(--ink);
+        }
+        .status-card strong { display: block; font-size: 28px; }
+        .status-card span { color: var(--muted); }
+        section {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 76px 0;
+        }
+        .section-head {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 24px;
+            margin-bottom: 28px;
+        }
+        .section-head h2 {
+            margin: 0;
+            font-size: clamp(28px, 4vw, 44px);
+            line-height: 1.1;
+        }
+        .section-head p {
+            max-width: 620px;
+            margin: 10px 0 0;
+            color: var(--muted);
+        }
+        .stats,
+        .service-grid,
+        .profile-grid,
+        .contact-grid {
+            display: grid;
+            gap: 16px;
+        }
+        .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: -34px; }
+        .stat,
+        .service-card,
+        .profile-card,
+        .contact-card {
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 22px;
+        }
+        .stat strong {
+            display: block;
+            font-size: 30px;
+            color: var(--navy);
+        }
+        .stat span { color: var(--muted); }
+        .service-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .service-card h3,
+        .profile-card h3,
+        .contact-card h3 {
+            margin: 0 0 10px;
+            font-size: 20px;
+        }
+        .service-card p,
+        .profile-card p,
+        .contact-card p {
+            margin: 0;
+            color: var(--muted);
+        }
+        .icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            margin-bottom: 16px;
+            background: #e9f6f4;
+            color: var(--teal);
+            font-weight: 900;
+        }
+        .about-band {
+            width: 100%;
+            background: #fff;
+            border-block: 1px solid var(--line);
+        }
+        .about-content {
+            display: grid;
+            grid-template-columns: .9fr 1.1fr;
+            gap: 34px;
+            align-items: center;
+        }
+        .about-panel {
+            min-height: 330px;
+            border-radius: 18px;
+            background:
+                linear-gradient(135deg, rgba(19,34,56,.92), rgba(22,138,134,.72)),
+                repeating-linear-gradient(0deg, rgba(255,255,255,.12) 0 1px, transparent 1px 46px);
+            color: #fff;
+            padding: 28px;
+            display: grid;
+            align-content: end;
+        }
+        .about-panel strong { font-size: 38px; line-height: 1; }
+        .about-text h2 { font-size: clamp(28px, 4vw, 44px); margin: 0 0 16px; }
+        .about-text p { color: var(--muted); margin: 0 0 14px; }
+        .profile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .contact-wrap {
+            background: var(--navy);
+            color: #fff;
+        }
+        .contact-wrap section { padding: 70px 0; }
+        .contact-wrap .section-head p { color: #cdd8e2; }
+        .contact-grid { grid-template-columns: 1fr 1fr 1fr; }
+        .contact-card {
+            background: rgba(255,255,255,.08);
+            border-color: rgba(255,255,255,.16);
+        }
+        .contact-card p { color: #dce7ef; }
+        footer {
+            background: #0a1727;
+            color: #cdd8e2;
+            padding: 22px 0;
+        }
+        .footer-inner {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        @media (max-width: 960px) {
+            .hero-inner,
+            .about-content {
+                grid-template-columns: 1fr;
+            }
+            .stats,
+            .service-grid,
+            .profile-grid,
+            .contact-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .section-head {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+        @media (max-width: 640px) {
+            .nav {
+                align-items: flex-start;
+                flex-direction: column;
+                padding: 14px 0;
+            }
+            .nav-links {
+                justify-content: flex-start;
+                gap: 10px;
+            }
+            .hero-inner {
+                min-height: auto;
+                padding: 48px 0;
+            }
+            .visual { min-height: 340px; }
+            .stats,
+            .service-grid,
+            .profile-grid,
+            .contact-grid {
+                grid-template-columns: 1fr;
+            }
+            .hero-actions .btn,
+            .section-actions .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <nav class="nav">
+            <a class="brand" href="/">
+                <span class="mark">S</span>
+                <span>Sentinel Shield Security</span>
+            </a>
+            <div class="nav-links">
+                <a href="#services">Services</a>
+                <a href="#about">About</a>
+                <a href="#profiles">Profiles</a>
+                <a href="#contact">Contact</a>
+                <a class="portal-btn" href="/dashboard/">Management Portal</a>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="hero">
+            <div class="hero-inner">
+                <div>
+                    <span class="eyebrow">Professional Security Management</span>
+                    <h1>Calm, visible protection for people, property, and operations.</h1>
+                    <p class="hero-copy">Sentinel Shield Security delivers disciplined guard deployment, site supervision, patrol reporting, and incident response supported by a modern management system.</p>
+                    <div class="hero-actions">
+                        <a class="btn btn-primary" href="#contact">Request Security Support</a>
+                        <a class="btn btn-outline" href="/dashboard/">Open Company Portal</a>
+                    </div>
+                </div>
+                <div class="visual" aria-label="Security guard and monitoring illustration">
+                    <div class="camera"></div>
+                    <div class="guard-shape"></div>
+                    <div class="status-card">
+                        <strong>On Duty</strong>
+                        <span>Guard roster, attendance, patrol, and incident records in one controlled workflow.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <section aria-label="Company highlights">
+            <div class="stats">
+                {% for value, label in profile_stats %}
+                    <article class="stat">
+                        <strong>{{ value }}</strong>
+                        <span>{{ label }}</span>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section id="services">
+            <div class="section-head">
+                <div>
+                    <h2>Security services designed for daily control.</h2>
+                    <p>From deployment to payroll visibility, the company profile is built around practical security operations and clear accountability.</p>
+                </div>
+            </div>
+            <div class="service-grid">
+                {% for service in services %}
+                    <article class="service-card">
+                        <div class="icon">{{ forloop.counter }}</div>
+                        <h3>{{ service.title }}</h3>
+                        <p>{{ service.text }}</p>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <div class="about-band" id="about">
+            <section class="about-content">
+                <div class="about-panel">
+                    <span>Company Profile</span>
+                    <strong>Reliable guards. Clear reporting. Better supervision.</strong>
+                </div>
+                <div class="about-text">
+                    <h2>About Us</h2>
+                    <p>Sentinel Shield Security is a professional security company focused on dependable guarding, organized site coverage, and fast incident visibility. We support clients who need a steady security presence without operational confusion.</p>
+                    <p>Our management approach connects clients, sites, guards, supervisors, shifts, patrol logs, attendance, training, payroll, and finance records so each department works from one trusted system.</p>
+                    <div class="section-actions">
+                        <a class="btn btn-primary" href="#profiles">View Profiles</a>
+                        <a class="btn btn-light" href="/attendances/">Roster Attendance</a>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <section id="profiles">
+            <div class="section-head">
+                <div>
+                    <h2>Company Profiles</h2>
+                    <p>Each team profile is aligned to a core part of the security operation.</p>
+                </div>
+            </div>
+            <div class="profile-grid">
+                <article class="profile-card">
+                    <div class="icon">O</div>
+                    <h3>Operations Department</h3>
+                    <p>Handles clients, sites, shifts, guard deployments, incidents, patrol logs, and asset assignment.</p>
+                </article>
+                <article class="profile-card">
+                    <div class="icon">H</div>
+                    <h3>Human Resource Department</h3>
+                    <p>Maintains employee records, roles, guards, supervisors, attendance, leave, training, documents, and evaluations.</p>
+                </article>
+                <article class="profile-card">
+                    <div class="icon">F</div>
+                    <h3>Finance Department</h3>
+                    <p>Controls salaries, advances, invoices, payments, budgets, and expenses for cleaner business oversight.</p>
+                </article>
+            </div>
+        </section>
+
+        <div class="contact-wrap" id="contact">
+            <section>
+                <div class="section-head">
+                    <div>
+                        <h2>Contact Sentinel Shield Security</h2>
+                        <p>Reach us for guard deployment, site risk review, supervision setup, or a managed security operations system.</p>
+                    </div>
+                </div>
+                <div class="contact-grid">
+                    <article class="contact-card">
+                        <h3>Phone</h3>
+                        <p>+256 700 000 000<br>+256 780 000 000</p>
+                    </article>
+                    <article class="contact-card">
+                        <h3>Email</h3>
+                        <p>info@sentinelshield.example<br>operations@sentinelshield.example</p>
+                    </article>
+                    <article class="contact-card">
+                        <h3>Office</h3>
+                        <p>Kampala, Uganda<br>Available for client site assessments.</p>
+                    </article>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <footer>
+        <div class="footer-inner">
+            <span>Sentinel Shield Security Company</span>
+            <span>Professional guarding, supervision, and security operations management.</span>
+        </div>
+    </footer>
+</body>
+</html>

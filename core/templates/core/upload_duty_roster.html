@@ -1,0 +1,49 @@
+{% extends "core/base.html" %}
+
+{% block title %}Upload Duty Roster{% endblock %}
+{% block page_label %}Upload Duty Roster{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Upload Duty Roster</h1>
+            <p class="muted">Import Excel rows into guard schedules.</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:attendances' %}">Back to Attendances</a>
+    </div>
+    <form class="form-card" method="post" enctype="multipart/form-data" style="grid-template-columns: 1fr;">
+        {% csrf_token %}
+        <div class="field">
+            <label for="roster_file">Excel duty roster</label>
+            <input id="roster_file" name="roster_file" type="file" accept=".xlsx,.xlsm" required>
+            <span class="helptext">
+                Upload either the simple template below or a Saracen site roster like Fortportal.xlsx with site, period, guard rows, and D/N/O duty codes.
+            </span>
+        </div>
+        <div class="table-wrap">
+            <table style="min-width: 760px;">
+                <thead>
+                    <tr>
+                        <th>company_number</th>
+                        <th>site_code</th>
+                        <th>shift_name</th>
+                        <th>shift_date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>DEMO-G-001</td>
+                        <td>DC1XS0001</td>
+                        <td>Demo Morning Shift</td>
+                        <td>2026-05-16</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-success" type="submit">Upload Roster</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

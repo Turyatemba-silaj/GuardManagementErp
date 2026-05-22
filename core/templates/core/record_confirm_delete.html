@@ -1,0 +1,24 @@
+{% extends "core/base.html" %}
+
+{% block title %}Delete {{ config.title }}{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Delete {{ config.title }}</h1>
+            <p class="muted">{{ config.department }}</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Back</a>
+    </div>
+    <div class="delete-body">
+        <p>Are you sure you want to delete this record?</p>
+        <strong>{{ record }}</strong>
+        <form class="actions" method="post">
+            {% csrf_token %}
+            <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Cancel</a>
+            <button class="btn btn-danger" type="submit">Delete</button>
+        </form>
+    </div>
+</section>
+{% endblock %}

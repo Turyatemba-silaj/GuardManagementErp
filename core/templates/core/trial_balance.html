@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}
+
+{% block title %}Trial Balance{% endblock %}
+{% block page_label %}Trial Balance{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Trial Balance</h1>
+            <p class="muted">Posted accounting entries</p>
+        </div>
+        {% include "core/accounting_nav.html" %}
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Account</th><th>Debit</th><th>Credit</th><th>Balance</th></tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.account }}</td>
+                        <td>{{ row.debit }}</td>
+                        <td>{{ row.credit }}</td>
+                        <td>{{ row.balance }}</td>
+                    </tr>
+                {% endfor %}
+                <tr>
+                    <th>Total</th>
+                    <th>{{ total_debit }}</th>
+                    <th>{{ total_credit }}</th>
+                    <th></th>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

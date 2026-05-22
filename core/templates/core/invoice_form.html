@@ -1,0 +1,216 @@
+{% extends "core/base.html" %}
+
+{% block title %}{{ mode }} Invoice{% endblock %}
+{% block extra_head %}
+<style>
+    .invoice-client-card {
+        grid-column: 1 / -1;
+        padding: 14px 16px;
+        border: 1px solid var(--sentinel-line);
+        background: #fbfcfd;
+        border-radius: 8px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .invoice-client-card span {
+        display: block;
+        color: var(--sentinel-muted);
+        font-size: 12px;
+    }
+    .invoice-client-card strong {
+        display: block;
+        min-height: 18px;
+        color: var(--sentinel-text);
+        font-weight: 800;
+        overflow-wrap: anywhere;
+    }
+    @media (max-width: 980px) {
+        .invoice-client-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 720px) {
+        .invoice-client-card { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>{{ mode }} Invoice</h1>
+            <p class="muted">Invoice number, subtotal, 18% VAT, total, balance, and status are calculated automatically.</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Back to Invoices</a>
+    </div>
+    <form class="form-card" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="field">{{ form.contract.label_tag }}{{ form.contract }}{{ form.contract.errors }}</div>
+        <div class="field">{{ form.client.label_tag }}{{ form.client }}<span class="helptext">{{ form.client.help_text }}</span>{{ form.client.errors }}</div>
+        <div class="field">{{ form.billing_scope.label_tag }}{{ form.billing_scope }}<span class="helptext">{{ form.billing_scope.help_text }}</span>{{ form.billing_scope.errors }}</div>
+        <div class="field">{{ form.site.label_tag }}{{ form.site }}{{ form.site.errors }}</div>
+        <div class="invoice-client-card" id="invoice-client-card" aria-live="polite">
+            <div><span>Client Name</span><strong data-client-field="name">{% if record %}{{ record.client_name }}{% endif %}</strong></div>
+            <div><span>Contact</span><strong data-client-field="contact">{% if record %}{{ record.client_contact_person }}{% endif %}</strong></div>
+            <div><span>Phone</span><strong data-client-field="phone">{% if record %}{{ record.client_phone_number }}{% endif %}</strong></div>
+            <div><span>Email</span><strong data-client-field="email">{% if record %}{{ record.client_email }}{% endif %}</strong></div>
+            <div><span>Address</span><strong data-client-field="address">{% if record %}{{ record.client_address }}{% endif %}</strong></div>
+            <div><span>Contract Sites</span><strong data-client-field="sites">Select a contract</strong></div>
+            <div><span>Site Guards</span><strong data-client-field="guards">0</strong></div>
+            <div><span>Estimated Site Billing</span><strong data-client-field="subtotal">0.00</strong></div>
+        </div>
+        <div class="field">{{ form.billing_month.label_tag }}{{ form.billing_month }}<span class="helptext">{{ form.billing_month.help_text }}</span>{{ form.billing_month.errors }}</div>
+        <div class="field">{{ form.invoice_date.label_tag }}{{ form.invoice_date }}{{ form.invoice_date.errors }}</div>
+        <div class="field">{{ form.due_date.label_tag }}{{ form.due_date }}{{ form.due_date.errors }}</div>
+        <div class="field">{{ form.guard_count.label_tag }}{{ form.guard_count }}<span class="helptext">{{ form.guard_count.help_text }}</span>{{ form.guard_count.errors }}</div>
+        <div class="field">{{ form.rate_per_guard.label_tag }}{{ form.rate_per_guard }}<span class="helptext">{{ form.rate_per_guard.help_text }}</span>{{ form.rate_per_guard.errors }}</div>
+        <div class="field">{{ form.gun_count.label_tag }}{{ form.gun_count }}{{ form.gun_count.errors }}</div>
+        <div class="field">{{ form.gun_rate.label_tag }}{{ form.gun_rate }}{{ form.gun_rate.errors }}</div>
+        <div class="field">{{ form.radio_count.label_tag }}{{ form.radio_count }}{{ form.radio_count.errors }}</div>
+        <div class="field">{{ form.radio_rate.label_tag }}{{ form.radio_rate }}{{ form.radio_rate.errors }}</div>
+        <div class="field">{{ form.metal_detector_count.label_tag }}{{ form.metal_detector_count }}{{ form.metal_detector_count.errors }}</div>
+        <div class="field">{{ form.metal_detector_rate.label_tag }}{{ form.metal_detector_rate }}{{ form.metal_detector_rate.errors }}</div>
+        <div class="field">{{ form.walk_through_machine_count.label_tag }}{{ form.walk_through_machine_count }}{{ form.walk_through_machine_count.errors }}</div>
+        <div class="field">{{ form.walk_through_machine_rate.label_tag }}{{ form.walk_through_machine_rate }}{{ form.walk_through_machine_rate.errors }}</div>
+        <div class="field">{{ form.dog_count.label_tag }}{{ form.dog_count }}{{ form.dog_count.errors }}</div>
+        <div class="field">{{ form.dog_rate.label_tag }}{{ form.dog_rate }}{{ form.dog_rate.errors }}</div>
+        <div class="field">{{ form.paid_amount.label_tag }}{{ form.paid_amount }}{{ form.paid_amount.errors }}</div>
+        {% if record %}
+            <div class="field">
+                <label>Computed Invoice</label>
+                <span class="helptext">
+                    {{ record.invoice_number }} | Subtotal {{ record.subtotal_amount }} | VAT {{ record.vat_amount }} | Total {{ record.total_amount }} | Balance {{ record.balance_amount }}
+                </span>
+            </div>
+        {% endif %}
+        <div class="form-actions">
+            <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Cancel</a>
+            <button class="btn btn-success" type="submit">Generate Invoice</button>
+        </div>
+    </form>
+</section>
+<script>
+    (function () {
+        var contractInput = document.getElementById("id_contract");
+        var clientInput = document.getElementById("id_client");
+        var scopeInput = document.getElementById("id_billing_scope");
+        var siteInput = document.getElementById("id_site");
+        var billingMonthInput = document.getElementById("id_billing_month");
+        var dataUrlTemplate = "{% url 'core:contract_invoice_data' 0 %}";
+        var selectedSite = siteInput ? siteInput.value : "";
+
+        function setText(name, value) {
+            var node = document.querySelector('[data-client-field="' + name + '"]');
+            if (node) {
+                node.textContent = value || "-";
+            }
+        }
+
+        function money(value) {
+            var number = Number(value || 0);
+            return number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function syncScope() {
+            if (!scopeInput || !siteInput) {
+                return;
+            }
+            var allSites = scopeInput.value === "contract";
+            siteInput.disabled = allSites;
+            if (allSites) {
+                siteInput.value = "";
+            }
+        }
+
+        function updateSiteSummary(sites) {
+            if (!siteInput) {
+                return;
+            }
+            var current = sites.find(function (site) { return String(site.id) === String(siteInput.value); });
+            if (!current && sites.length) {
+                current = sites[0];
+            }
+            if (scopeInput && scopeInput.value === "contract") {
+                var guards = sites.reduce(function (sum, site) { return sum + Number(site.guards || 0); }, 0);
+                var subtotal = sites.reduce(function (sum, site) { return sum + Number(site.subtotal || 0); }, 0);
+                setText("guards", guards);
+                setText("subtotal", money(subtotal));
+                return;
+            }
+            setText("guards", current ? current.guards : 0);
+            setText("subtotal", money(current ? current.subtotal : 0));
+        }
+
+        function fillSites(sites) {
+            if (!siteInput) {
+                return;
+            }
+            siteInput.innerHTML = "";
+            var placeholder = document.createElement("option");
+            placeholder.value = "";
+            placeholder.textContent = "Select a contract site";
+            siteInput.appendChild(placeholder);
+            sites.forEach(function (site) {
+                var option = document.createElement("option");
+                option.value = site.id;
+                option.textContent = site.name + " - " + site.guards + " guard(s)";
+                siteInput.appendChild(option);
+            });
+            if (selectedSite && sites.some(function (site) { return String(site.id) === String(selectedSite); })) {
+                siteInput.value = selectedSite;
+            }
+            setText("sites", sites.length + " site(s)");
+            updateSiteSummary(sites);
+            syncScope();
+        }
+
+        function loadContract() {
+            if (!contractInput || !contractInput.value) {
+                setText("sites", "Select a contract");
+                return;
+            }
+            var url = dataUrlTemplate.replace("/0/", "/" + contractInput.value + "/");
+            if (billingMonthInput && billingMonthInput.value) {
+                url += "?billing_month=" + encodeURIComponent(billingMonthInput.value);
+            }
+            fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+                .then(function (response) { return response.json(); })
+                .then(function (payload) {
+                    if (clientInput) {
+                        clientInput.value = payload.client.id;
+                    }
+                    setText("name", payload.client.name);
+                    setText("contact", payload.client.contact);
+                    setText("phone", payload.client.phone);
+                    setText("email", payload.client.email);
+                    setText("address", payload.client.address);
+                    fillSites(payload.sites || []);
+                });
+        }
+
+        if (contractInput) {
+            contractInput.addEventListener("change", function () {
+                selectedSite = "";
+                loadContract();
+            });
+        }
+        if (billingMonthInput) {
+            billingMonthInput.addEventListener("change", loadContract);
+        }
+        if (scopeInput) {
+            scopeInput.addEventListener("change", function () {
+                syncScope();
+                loadContract();
+            });
+        }
+        if (siteInput) {
+            siteInput.addEventListener("change", function () {
+                selectedSite = siteInput.value;
+                loadContract();
+            });
+        }
+        syncScope();
+        loadContract();
+    })();
+</script>
+{% endblock %}

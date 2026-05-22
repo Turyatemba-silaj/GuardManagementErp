@@ -1,0 +1,264 @@
+{% extends "core/base.html" %}
+
+{% block title %}Roster Attendances{% endblock %}
+{% block page_label %}Attendances{% endblock %}
+
+{% block extra_head %}
+<style>
+    .attendance-entry {
+        border-top: 3px solid var(--sentinel-green);
+    }
+    .attendance-entry .panel-head {
+        border-bottom: 0;
+        align-items: flex-start;
+        padding: 24px 18px 10px;
+    }
+    .attendance-entry .site-line {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 800;
+    }
+    .attendance-entry .filter-form {
+        align-items: end;
+        gap: 30px;
+        padding: 18px 30px 36px;
+    }
+    .attendance-entry .filter-form .field {
+        min-width: 144px;
+    }
+    .attendance-entry .filter-form select,
+    .attendance-entry .filter-form input {
+        width: 144px;
+    }
+    .attendance-entry .show-btn {
+        width: 230px;
+    }
+    .attendance-entry .table-tools {
+        padding: 0 18px 4px;
+        border-bottom: 0;
+    }
+    .attendance-entry .length-row {
+        padding: 0 18px 4px;
+    }
+    .attendance-entry .length-row select {
+        width: 74px;
+    }
+    .attendance-entry .table-wrap {
+        padding: 0 18px;
+    }
+    .attendance-entry table {
+        min-width: 980px;
+    }
+    .attendance-entry th {
+        background: #fff;
+        color: #1f2d3d;
+        font-size: 13px;
+        text-transform: none;
+    }
+    .attendance-entry th .sort {
+        float: right;
+        color: #cfd4d8;
+        font-size: 16px;
+        line-height: 1;
+    }
+    .attendance-entry .footer-row {
+        padding: 14px 18px 22px;
+    }
+    .attendance-entry .search input {
+        width: 168px;
+    }
+    .attendance-entry .reason-input {
+        width: 100%;
+        min-width: 220px;
+    }
+    .attendance-entry .guard-select {
+        min-width: 190px;
+    }
+    .attendance-entry .present-select {
+        min-width: 74px;
+    }
+    .attendance-entry .replacement-field.is-hidden {
+        display: none;
+    }
+    @media (max-width: 720px) {
+        .attendance-entry .filter-form {
+            padding-inline: 18px;
+            gap: 14px;
+        }
+        .attendance-entry .filter-form .field,
+        .attendance-entry .filter-form select,
+        .attendance-entry .filter-form input,
+        .attendance-entry .show-btn,
+        .attendance-entry .search input {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="panel attendance-entry">
+    <div class="panel-head">
+        <div>
+            <h1>Roster Attendances</h1>
+            <p class="site-line">Site: {% if selected_site %}{{ selected_site.site_code }} - {{ selected_site.site_name }}{% else %}All sites{% endif %}.</p>
+        </div>
+    </div>
+
+    <form class="filter-form" method="get">
+        <div class="field">
+            <label for="site">Site</label>
+            <select id="site" name="site">
+                <option value="">Select site</option>
+                {% for site in sites %}
+                    <option value="{{ site.id }}" {% if selected_site_id == site.id|stringformat:"s" %}selected{% endif %}>
+                        {{ site.site_code|default:"SITE" }} - {{ site.site_name|truncatechars:12 }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="date">Date to Mark</label>
+            <input id="date" name="date" type="date" value="{{ selected_date }}">
+        </div>
+        <button class="show-btn" type="submit">Show Scheduled Guards</button>
+    </form>
+
+    <div class="table-tools">
+        <div class="buttons" aria-label="Export buttons">
+            <span class="tool-btn">Excel</span>
+            <span class="tool-btn">PDF</span>
+            <span class="tool-btn">Column visibility</span>
+        </div>
+        <label class="search" for="search">Search:
+            <input id="search" type="search">
+        </label>
+    </div>
+
+    <div class="length-row">
+        <span>Show</span>
+        <select aria-label="Rows per page">
+            <option>10</option>
+            <option>25</option>
+            <option>50</option>
+            <option>100</option>
+        </select>
+        <span>entries</span>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="site" value="{{ selected_site_id }}">
+        <input type="hidden" name="date" value="{{ selected_date }}">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Scheduled Guard <span class="sort">&UpDownArrow;</span></th>
+                        <th>Shift Date <span class="sort">&UpDownArrow;</span></th>
+                        <th>Shift Type <span class="sort">&UpDownArrow;</span></th>
+                        <th>Present? <span class="sort">&UpDownArrow;</span></th>
+                        <th>Attended Guard <span class="sort">&UpDownArrow;</span></th>
+                        <th>Reason <span class="sort">&UpDownArrow;</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for schedule in schedules %}
+                        <tr>
+                            <td>
+                                <input type="hidden" name="schedule_ids" value="{{ schedule.id }}">
+                                <select class="guard-select" name="scheduled_guard_{{ schedule.id }}" aria-label="Scheduled guard">
+                                    {% for guard in guards %}
+                                        <option value="{{ guard.id }}" {% if guard.id == schedule.employee_id %}selected{% endif %}>
+                                            {{ guard.full_name }} ({{ guard.company_number }})
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>{{ schedule.shift_date|date:"Y-m-d" }}</td>
+                            <td>{{ schedule.shift.code|default:schedule.shift.shift_name }}</td>
+                            <td>
+                                <select
+                                    class="present-select"
+                                    name="present_{{ schedule.id }}"
+                                    aria-label="Present"
+                                    data-attendance-toggle
+                                    data-schedule-id="{{ schedule.id }}"
+                                >
+                                    <option value="yes" {% if schedule.attendance.status == "Present" or not schedule.attendance %}selected{% endif %}>Yes</option>
+                                    <option value="no" {% if schedule.attendance.status == "Absent" or schedule.replacement_employee %}selected{% endif %}>No</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select
+                                    class="guard-select replacement-field"
+                                    name="replacement_guard_{{ schedule.id }}"
+                                    aria-label="Replacement guard"
+                                    data-replacement-for="{{ schedule.id }}"
+                                >
+                                    <option value="">No replacement</option>
+                                    {% for guard in guards %}
+                                        <option value="{{ guard.id }}" {% if schedule.replacement_employee_id == guard.id %}selected{% endif %}>
+                                            {{ guard.full_name }} ({{ guard.company_number }})
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>
+                                <select
+                                    class="reason-input replacement-field"
+                                    name="reason_{{ schedule.id }}"
+                                    aria-label="Reason"
+                                    data-replacement-for="{{ schedule.id }}"
+                                >
+                                    <option value="">Select reason</option>
+                                    <option value="Sick" {% if schedule.replacement_reason == "Sick" or schedule.attendance.remarks == "Sick" %}selected{% endif %}>Sick</option>
+                                    <option value="Absent without notice" {% if schedule.replacement_reason == "Absent without notice" or schedule.attendance.remarks == "Absent without notice" %}selected{% endif %}>Absent without notice</option>
+                                    <option value="Approved leave" {% if schedule.replacement_reason == "Approved leave" or schedule.attendance.remarks == "Approved leave" %}selected{% endif %}>Approved leave</option>
+                                    <option value="Late arrival" {% if schedule.replacement_reason == "Late arrival" or schedule.attendance.remarks == "Late arrival" %}selected{% endif %}>Late arrival</option>
+                                    <option value="Emergency" {% if schedule.replacement_reason == "Emergency" or schedule.attendance.remarks == "Emergency" %}selected{% endif %}>Emergency</option>
+                                    <option value="Suspended" {% if schedule.replacement_reason == "Suspended" or schedule.attendance.remarks == "Suspended" %}selected{% endif %}>Suspended</option>
+                                    <option value="Reassigned" {% if schedule.replacement_reason == "Reassigned" or schedule.attendance.remarks == "Reassigned" %}selected{% endif %}>Reassigned</option>
+                                    <option value="Transport issue" {% if schedule.replacement_reason == "Transport issue" or schedule.attendance.remarks == "Transport issue" %}selected{% endif %}>Transport issue</option>
+                                    <option value="Other" {% if schedule.replacement_reason == "Other" or schedule.attendance.remarks == "Other" %}selected{% endif %}>Other</option>
+                                </select>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr class="empty-row">
+                            <td colspan="6">No data available in table</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if schedules %}
+            <div class="save-row">
+                <button class="save-btn" type="submit">Save Attendance</button>
+            </div>
+        {% endif %}
+    </form>
+
+    <div class="footer-row">
+        <span>Showing {% if schedules %}1{% else %}0{% endif %} to {{ schedules|length }} of {{ schedules|length }} entries</span>
+        <div class="pagination" aria-label="Pagination">
+            <span class="page-btn">Previous</span>
+            <span class="page-btn">Next</span>
+        </div>
+    </div>
+</section>
+<script>
+    document.querySelectorAll("[data-attendance-toggle]").forEach((select) => {
+        const updateReplacementFields = () => {
+            const scheduleId = select.dataset.scheduleId;
+            const showReplacement = select.value === "no";
+            document.querySelectorAll(`[data-replacement-for="${scheduleId}"]`).forEach((field) => {
+                field.classList.toggle("is-hidden", !showReplacement);
+                field.disabled = !showReplacement;
+            });
+        };
+        select.addEventListener("change", updateReplacementFields);
+        updateReplacementFields();
+    });
+</script>
+{% endblock %}

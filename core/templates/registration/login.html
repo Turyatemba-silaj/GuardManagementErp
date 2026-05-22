@@ -1,0 +1,31 @@
+{% extends "core/base.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+<section class="panel" style="max-width: 520px; margin: 60px auto;">
+    <div class="panel-head">
+        <div>
+            <h1>Sign in</h1>
+            <p class="muted">Use your assigned system account.</p>
+        </div>
+    </div>
+    <form class="form-card" method="post" style="grid-template-columns: 1fr;">
+        {% csrf_token %}
+        {% if form.errors %}
+            <p style="color: #c93535;">Invalid username or password.</p>
+        {% endif %}
+        <div class="field">
+            {{ form.username.label_tag }}
+            {{ form.username }}
+        </div>
+        <div class="field">
+            {{ form.password.label_tag }}
+            {{ form.password }}
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">Login</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

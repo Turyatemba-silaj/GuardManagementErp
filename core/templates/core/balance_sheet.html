@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}
+
+{% block title %}Balance Sheet{% endblock %}
+{% block page_label %}Balance Sheet{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Balance Sheet</h1>
+            <p class="muted">Assets, liabilities, and equity from posted journals</p>
+        </div>
+        {% include "core/accounting_nav.html" %}
+    </div>
+    <div class="card-grid">
+        <article class="module-card">
+            <h2>Assets</h2>
+            <div class="module-list">
+                {% for row in asset_rows %}<div class="module-row"><span>{{ row.account }}</span><strong>{{ row.balance }}</strong></div>{% endfor %}
+                <div class="module-row"><span>Total Assets</span><strong>{{ total_assets }}</strong></div>
+            </div>
+        </article>
+        <article class="module-card">
+            <h2>Liabilities</h2>
+            <div class="module-list">
+                {% for row in liability_rows %}<div class="module-row"><span>{{ row.account }}</span><strong>{{ row.balance }}</strong></div>{% endfor %}
+                <div class="module-row"><span>Total Liabilities</span><strong>{{ total_liabilities }}</strong></div>
+            </div>
+        </article>
+        <article class="module-card">
+            <h2>Equity</h2>
+            <div class="module-list">
+                {% for row in equity_rows %}<div class="module-row"><span>{{ row.account }}</span><strong>{{ row.balance }}</strong></div>{% endfor %}
+                <div class="module-row"><span>Total Equity</span><strong>{{ total_equity }}</strong></div>
+            </div>
+        </article>
+    </div>
+</section>
+{% endblock %}

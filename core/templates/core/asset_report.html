@@ -1,0 +1,45 @@
+{% extends "core/base.html" %}
+
+{% block title %}Asset Report{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Asset Report</h1>
+            <p class="muted">Assets assigned to guards in your allowed zones.</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:record_list' 'assets' %}">Manage Assets</a>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Asset</th>
+                    <th>Type</th>
+                    <th>Serial</th>
+                    <th>Condition</th>
+                    <th>Assigned To</th>
+                    <th>Issue Date</th>
+                    <th>Return Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for asset in assets %}
+                    <tr>
+                        <td>{{ asset.asset_name }}</td>
+                        <td>{{ asset.asset_type }}</td>
+                        <td>{{ asset.serial_number }}</td>
+                        <td>{{ asset.condition|default:"-" }}</td>
+                        <td>{{ asset.assigned_to|default:"-" }}</td>
+                        <td>{{ asset.issue_date|default:"-" }}</td>
+                        <td>{{ asset.return_date|default:"-" }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7">No assets found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends "core/base.html" %}
+
+{% block title %}Zone Shift Summary{% endblock %}
+{% block page_label %}Zone Shift Summary{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Zone Shift Summary</h1>
+            <p class="muted">Marked guards summarized by zone and shift.</p>
+        </div>
+        <a class="btn btn-success" href="{% url 'core:attendances' %}">Mark Attendance</a>
+    </div>
+    <form class="filter-form" method="get">
+        <div class="field">
+            <label for="date">Date</label>
+            <input id="date" name="date" type="date" value="{{ selected_date }}">
+        </div>
+        <div class="field">
+            <label for="zone">Zone</label>
+            <select id="zone" name="zone">
+                <option value="">All zones</option>
+                {% for zone in zones %}
+                    <option value="{{ zone.id }}" {% if selected_zone_id == zone.id|stringformat:"s" %}selected{% endif %}>
+                        {{ zone.zone_code }} - {{ zone.zone_name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <button class="show-btn" type="submit">Show Summary</button>
+    </form>
+</section>
+
+<section class="quick-stats" aria-label="Zone shift totals">
+    <article class="stat-card">
+        <i class="fa-solid fa-users"></i>
+        <div>
+            <strong>{{ totals.scheduled }}</strong>
+            <span>Scheduled</span>
+        </div>
+    </article>
+    <article class="stat-card">
+        <i class="fa-solid fa-user-check"></i>
+        <div>
+            <strong>{{ totals.present }}</strong>
+            <span>Present</span>
+        </div>
+    </article>
+    <article class="stat-card">
+        <i class="fa-solid fa-user-xmark"></i>
+        <div>
+            <strong>{{ totals.absent }}</strong>
+            <span>Absent</span>
+        </div>
+    </article>
+    <article class="stat-card">
+        <i class="fa-solid fa-right-left"></i>
+        <div>
+            <strong>{{ totals.replacements }}</strong>
+            <span>Replacements</span>
+        </div>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Zone</th>
+                    <th>Supervisor</th>
+                    <th>Shift</th>
+                    <th>Shift Code</th>
+                    <th>Basic Hours</th>
+                    <th>Overtime Hours</th>
+                    <th>Scheduled</th>
+                    <th>Present</th>
+                    <th>Absent</th>
+                    <th>Replacements</th>
+                    <th>Marked Guards</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in summary_rows %}
+                    <tr>
+                        <td>{{ row.zone.zone_code }} - {{ row.zone.zone_name }}</td>
+                        <td>{{ row.zone.supervisor.full_name }}</td>
+                        <td>{{ row.shift }}</td>
+                        <td>{{ row.shift_code }}</td>
+                        <td>{{ row.basic_hours }}</td>
+                        <td>{{ row.overtime_hours }}</td>
+                        <td>{{ row.scheduled }}</td>
+                        <td>{{ row.present }}</td>
+                        <td>{{ row.absent }}</td>
+                        <td>{{ row.replacements }}</td>
+                        <td>
+                            {% for guard in row.guards %}
+                                <div>
+                                    <strong>{{ guard.scheduled }}</strong>
+                                    <span class="muted">at {{ guard.site }} - {{ guard.status }}</span>
+                                    {% if guard.replacement %}
+                                        <span> replaced by {{ guard.replacement }}</span>
+                                    {% endif %}
+                                    {% if guard.reason %}
+                                        <span class="muted">({{ guard.reason }})</span>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="11">No marked guard records found for this date.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
