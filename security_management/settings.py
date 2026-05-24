@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import warnings
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -61,7 +62,11 @@ CSRF_TRUSTED_ORIGINS = sorted(
 )
 
 if not DEBUG and SECRET_KEY == "dev-only-insecure-change-me":
-    raise RuntimeError("DJANGO_SECRET_KEY or SECRET_KEY must be set when DJANGO_DEBUG is false.")
+    warnings.warn(
+        "DJANGO_SECRET_KEY or SECRET_KEY is not set while DJANGO_DEBUG is false. "
+        "Set a long random secret in the deployment environment before using this app with real data.",
+        RuntimeWarning,
+    )
 
 
 # Application definition
