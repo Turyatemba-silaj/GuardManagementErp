@@ -11,6 +11,9 @@ DJANGO_DEBUG=false
 DJANGO_SECRET_KEY=<long-random-production-secret>
 DJANGO_ALLOWED_HOSTS=guard-management-erp.vercel.app,guard-management-9cjueoyro-turyatemba-silaj-s-projects.vercel.app
 DJANGO_CSRF_TRUSTED_ORIGINS=https://guard-management-erp.vercel.app,https://guard-management-9cjueoyro-turyatemba-silaj-s-projects.vercel.app
+DJANGO_SUPERUSER_USERNAME=siraje
+DJANGO_SUPERUSER_PASSWORD=<temporary-strong-password>
+DJANGO_SUPERUSER_EMAIL=<your-email>
 ```
 
 Vercel normally also provides `VERCEL=1` and `VERCEL_URL`; the settings file now reads those automatically. The explicit variables above are still recommended because they make the production host policy clear.
@@ -37,3 +40,5 @@ DJANGO_DB_PORT=5432
 ```
 
 If PostgreSQL is used, add the required database driver to `requirements.txt`.
+
+For short-term Vercel testing, the app uses signed-cookie sessions on Vercel and disables the automatic `last_login` database write. That can allow login to work with a bundled read-only SQLite database, but any real data changes still require a writable production database.
