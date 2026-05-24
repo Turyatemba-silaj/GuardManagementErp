@@ -49,7 +49,7 @@ def https_origins(hosts):
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret.
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-insecure-change-me")
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY") or "dev-only-insecure-change-me"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool("DJANGO_DEBUG", default=not env_bool("VERCEL"))
@@ -61,7 +61,7 @@ CSRF_TRUSTED_ORIGINS = sorted(
 )
 
 if not DEBUG and SECRET_KEY == "dev-only-insecure-change-me":
-    raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false.")
+    raise RuntimeError("DJANGO_SECRET_KEY or SECRET_KEY must be set when DJANGO_DEBUG is false.")
 
 
 # Application definition
