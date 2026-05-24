@@ -43,7 +43,11 @@ def vercel_hosts():
 
 
 def https_origins(hosts):
-    return [f"https://{host}" for host in hosts if host and host not in {"127.0.0.1", "localhost", "testserver"}]
+    return [
+        f"https://{host}"
+        for host in hosts
+        if host and not host.startswith(".") and host not in {"127.0.0.1", "localhost", "testserver"}
+    ]
 
 
 # Quick-start development settings - unsuitable for production
@@ -55,10 +59,10 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool("DJANGO_DEBUG", default=not env_bool("VERCEL"))
 
-DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver", *vercel_hosts()]
-ALLOWED_HOSTS = sorted(set(env_list("DJANGO_ALLOWED_HOSTS", default=DEFAULT_ALLOWED_HOSTS)))
+DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver", ".vercel.app", *vercel_hosts()]
+ALLOWED_HOSTS = sorted(set(DEFAULT_ALLOWED_HOSTS + env_list("DJANGO_ALLOWED_HOSTS")))
 CSRF_TRUSTED_ORIGINS = sorted(
-    set(env_list("DJANGO_CSRF_TRUSTED_ORIGINS", default=https_origins(ALLOWED_HOSTS)))
+    set(["https://*.vercel.app", *https_origins(ALLOWED_HOSTS), *env_list("DJANGO_CSRF_TRUSTED_ORIGINS")])
 )
 
 if not DEBUG and SECRET_KEY == "dev-only-insecure-change-me":
