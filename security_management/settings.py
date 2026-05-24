@@ -31,6 +31,20 @@ def env_list(name, default=()):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def vercel_hosts():
+    hosts = [
+        "guard-management-erp.vercel.app",
+        os.environ.get("VERCEL_URL"),
+        os.environ.get("VERCEL_BRANCH_URL"),
+        os.environ.get("VERCEL_PROJECT_PRODUCTION_URL"),
+    ]
+    return [host.replace("https://", "").replace("http://", "").strip("/") for host in hosts if host]
+
+
+def https_origins(hosts):
+    return [f"https://{host}" for host in hosts if host and host not in {"127.0.0.1", "localhost", "testserver"}]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -38,10 +52,13 @@ def env_list(name, default=()):
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-insecure-change-me")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env_bool("DJANGO_DEBUG", default=True)
+DEBUG = env_bool("DJANGO_DEBUG", default=not env_bool("VERCEL"))
 
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", default=["127.0.0.1", "localhost", "testserver"])
-CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver", *vercel_hosts()]
+ALLOWED_HOSTS = sorted(set(env_list("DJANGO_ALLOWED_HOSTS", default=DEFAULT_ALLOWED_HOSTS)))
+CSRF_TRUSTED_ORIGINS = sorted(
+    set(env_list("DJANGO_CSRF_TRUSTED_ORIGINS", default=https_origins(ALLOWED_HOSTS)))
+)
 
 if not DEBUG and SECRET_KEY == "dev-only-insecure-change-me":
     raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false.")
@@ -155,6 +172,7 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 X_FRAME_OPTIONS = "DENY"
 
 if not DEBUG:
