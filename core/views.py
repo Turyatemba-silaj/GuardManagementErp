@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.exceptions import ValidationError
+from django.db import DatabaseError, connection
 from django.db import transaction
 from django.db.models import Count, ProtectedError, Sum
 from django.db.models.functions import Coalesce
@@ -189,49 +190,61 @@ def home(request):
 @login_required
 @user_passes_test(can_access_internal)
 def dashboard(request):
-    visible_groups = visible_grouped_registry(request.user)
-    operations = {
-        "clients": models.Client.objects.count(),
-        "sites": models.Site.objects.count(),
-        "deployments": models.Deployment.objects.count(),
-        "incidents": models.Incident.objects.count(),
-        "patrol_logs": models.PatrolLog.objects.count(),
-        "assets": models.Asset.objects.count(),
-    }
-    human_resource = {
-        "employees": models.Employee.objects.count(),
-        "recruitment_applications": models.RecruitmentApplication.objects.count(),
-        "attendance": models.Attendance.objects.count(),
-        "leave_requests": models.Leave.objects.count(),
-        "trainings": models.Training.objects.count(),
-        "salaries": models.Salary.objects.count(),
-    }
-    finance = {
-        "advances": models.Advance.objects.count(),
-        "invoices": models.Invoice.objects.count(),
-        "payments": models.Payment.objects.count(),
-        "budgets": models.Budget.objects.count(),
-        "expenses": models.Expense.objects.count(),
-    }
-    recruitment_dashboard = {
-        "open_requisitions": models.RecruitmentRequisition.objects.filter(
-            status__in=[
-                models.RecruitmentRequisition.RequisitionStatus.OPEN,
-                models.RecruitmentRequisition.RequisitionStatus.SHORTLISTING,
-                models.RecruitmentRequisition.RequisitionStatus.INTERVIEWING,
-                models.RecruitmentRequisition.RequisitionStatus.OFFERING,
-            ]
-        ).count(),
-        "applications": models.RecruitmentApplication.objects.count(),
-        "accepted_offers": models.JobOffer.objects.filter(status=models.JobOffer.OfferStatus.ACCEPTED).count(),
-    }
-    training_dashboard = {
-        "records": models.Training.objects.count(),
-        "successful": models.Training.objects.filter(
-            result__in=[models.Training.TrainingResult.COMPLETED, models.Training.TrainingResult.PASSED]
-        ).count(),
-        "expired": models.Training.objects.filter(result=models.Training.TrainingResult.EXPIRED).count(),
-    }
+    try:
+        visible_groups = visible_grouped_registry(request.user)
+        operations = {
+            "clients": models.Client.objects.count(),
+            "sites": models.Site.objects.count(),
+            "deployments": models.Deployment.objects.count(),
+            "incidents": models.Incident.objects.count(),
+            "patrol_logs": models.PatrolLog.objects.count(),
+            "assets": models.Asset.objects.count(),
+        }
+        human_resource = {
+            "employees": models.Employee.objects.count(),
+            "recruitment_applications": models.RecruitmentApplication.objects.count(),
+            "attendance": models.Attendance.objects.count(),
+            "leave_requests": models.Leave.objects.count(),
+            "trainings": models.Training.objects.count(),
+            "salaries": models.Salary.objects.count(),
+        }
+        finance = {
+            "advances": models.Advance.objects.count(),
+            "invoices": models.Invoice.objects.count(),
+            "payments": models.Payment.objects.count(),
+            "budgets": models.Budget.objects.count(),
+            "expenses": models.Expense.objects.count(),
+        }
+        recruitment_dashboard = {
+            "open_requisitions": models.RecruitmentRequisition.objects.filter(
+                status__in=[
+                    models.RecruitmentRequisition.RequisitionStatus.OPEN,
+                    models.RecruitmentRequisition.RequisitionStatus.SHORTLISTING,
+                    models.RecruitmentRequisition.RequisitionStatus.INTERVIEWING,
+                    models.RecruitmentRequisition.RequisitionStatus.OFFERING,
+                ]
+            ).count(),
+            "applications": models.RecruitmentApplication.objects.count(),
+            "accepted_offers": models.JobOffer.objects.filter(status=models.JobOffer.OfferStatus.ACCEPTED).count(),
+        }
+        training_dashboard = {
+            "records": models.Training.objects.count(),
+            "successful": models.Training.objects.filter(
+                result__in=[models.Training.TrainingResult.COMPLETED, models.Training.TrainingResult.PASSED]
+            ).count(),
+            "expired": models.Training.objects.filter(result=models.Training.TrainingResult.EXPIRED).count(),
+        }
+    except DatabaseError as error:
+        return render(
+            request,
+            "core/system_error.html",
+            {
+                "title": "Database is not available",
+                "message": "The ERP database could not be opened in this deployment.",
+                "detail": str(error),
+            },
+            status=503,
+        )
     department_totals = {
         "Operations": sum(operations.values()),
         "Human Resource": sum(human_resource.values()),
@@ -464,6 +477,28 @@ def json_error(message, status=400, **extra):
     payload = {"status": "error", "message": message}
     payload.update(extra)
     return JsonResponse(payload, status=status)
+
+
+def healthz(request):
+    db_ok = False
+    db_error = ""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            db_ok = cursor.fetchone()[0] == 1
+    except Exception as error:
+        db_error = str(error)
+    return JsonResponse(
+        {
+            "status": "ok" if db_ok else "degraded",
+            "debug": settings.DEBUG,
+            "database": "ok" if db_ok else "error",
+            "database_error": db_error,
+            "session_engine": getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"),
+            "allowed_hosts": settings.ALLOWED_HOSTS,
+        },
+        status=200 if db_ok else 503,
+    )
 
 
 @csrf_exempt

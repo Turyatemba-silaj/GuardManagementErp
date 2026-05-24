@@ -1,0 +1,24 @@
+{% extends "core/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+{% block page_label %}System Status{% endblock %}
+
+{% block content %}
+<section class="panel" style="max-width: 760px;">
+    <div class="panel-head">
+        <div>
+            <h1>{{ title }}</h1>
+            <p class="muted">{{ message }}</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:healthz' %}">Health Check</a>
+    </div>
+    {% if detail %}
+        <div class="alert alert-warning" role="alert" style="overflow-wrap: anywhere;">
+            {{ detail }}
+        </div>
+    {% endif %}
+    <p class="muted">
+        On Vercel, use a hosted database such as PostgreSQL for production ERP data. SQLite inside a serverless deployment is not reliable for authenticated workflows.
+    </p>
+</section>
+{% endblock %}

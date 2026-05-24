@@ -16,6 +16,7 @@ from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+IS_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL"))
 
 
 def env_bool(name, default=False):
@@ -57,7 +58,7 @@ def https_origins(hosts):
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY") or "dev-only-insecure-change-me"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env_bool("DJANGO_DEBUG", default=not env_bool("VERCEL"))
+DEBUG = env_bool("DJANGO_DEBUG", default=not IS_VERCEL)
 
 DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver", ".vercel.app", *vercel_hosts()]
 ALLOWED_HOSTS = sorted(set(DEFAULT_ALLOWED_HOSTS + env_list("DJANGO_ALLOWED_HOSTS")))
@@ -184,9 +185,9 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
-if env_bool("VERCEL"):
+if IS_VERCEL:
     SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
-DISABLE_LAST_LOGIN_UPDATE = env_bool("DJANGO_DISABLE_LAST_LOGIN_UPDATE", default=env_bool("VERCEL"))
+DISABLE_LAST_LOGIN_UPDATE = env_bool("DJANGO_DISABLE_LAST_LOGIN_UPDATE", default=IS_VERCEL)
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

@@ -20,7 +20,15 @@ Vercel normally also provides `VERCEL=1` and `VERCEL_URL`; the settings file now
 
 ## How To Confirm It Worked
 
-After redeploying, the Django debug error page should disappear. If a `DisallowedHost` page still shows:
+After redeploying, visit:
+
+```text
+https://guard-management-erp.vercel.app/healthz/
+```
+
+It should return JSON showing `debug: false`, the active session engine, allowed hosts, and whether the database can be opened.
+
+If a `DisallowedHost` page still shows:
 
 - `DEBUG=True`, Vercel is still using development settings or an old deployment.
 - `ALLOWED_HOSTS=['127.0.0.1', 'localhost', 'testserver']`, the latest code/env variables are not active.
