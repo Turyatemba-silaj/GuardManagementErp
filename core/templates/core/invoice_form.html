@@ -85,6 +85,9 @@
         {% endif %}
         <div class="form-actions">
             <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Cancel</a>
+            {% if record %}
+                <a class="btn btn-light" href="{% url 'core:invoice_pdf' record.pk %}">Download PDF</a>
+            {% endif %}
             <button class="btn btn-success" type="submit">Generate Invoice</button>
         </div>
     </form>

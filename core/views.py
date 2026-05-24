@@ -5,8 +5,10 @@ from io import BytesIO
 import json
 import re
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, ProtectedError, Sum
 from django.db.models.functions import Coalesce
@@ -20,15 +22,17 @@ from django.utils.dateparse import parse_date, parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 from openpyxl import Workbook, load_workbook
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from . import models
 from .access import can_access_internal, can_manage_slug, is_manager, is_supervisor
 from .accounting import ensure_default_accounts, post_all_accounting
 from .crud import MODEL_REGISTRY, visible_grouped_registry
-from .forms import InvoiceForm
+from .forms import InvoiceForm, SecureModelForm
+from .security import validate_excel_upload
 
 
 MODEL_FORM_EXCLUDES = {
@@ -51,7 +55,11 @@ def get_model_config(slug):
 def build_model_form(model):
     if model is models.Invoice:
         return InvoiceForm
-    form = modelform_factory(model, exclude=MODEL_FORM_EXCLUDES.get(model, ("created_at", "updated_at")))
+    form = modelform_factory(
+        model,
+        form=SecureModelForm,
+        exclude=MODEL_FORM_EXCLUDES.get(model, ("created_at", "updated_at")),
+    )
     for field_name, field in form.base_fields.items():
         field.widget.attrs.setdefault("class", "form-control")
         if field_name == "passport_photo":
@@ -462,6 +470,8 @@ def json_error(message, status=400, **extra):
 def attendance_swipe_api(request):
     if request.method != "POST":
         return json_error("Only POST is allowed.", status=405)
+    if len(request.body) > settings.ATTENDANCE_API_MAX_BODY_BYTES:
+        return json_error("Attendance payload is too large.", status=413)
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
     except json.JSONDecodeError:
@@ -484,7 +494,9 @@ def attendance_swipe_api(request):
     latitude = decimal_from_payload(payload.get("latitude"))
     longitude = decimal_from_payload(payload.get("longitude"))
 
-    device = models.AttendanceDevice.objects.filter(device_id=device_identifier, api_key=token, is_active=True).first()
+    device = None
+    if token and device_identifier:
+        device = models.AttendanceDevice.objects.filter(device_id=device_identifier, api_key=token, is_active=True).first()
     site = None
     employee = None
     schedule = None
@@ -649,6 +661,166 @@ def payroll_row(salary):
         salary.net_salary,
         salary.get_status_display(),
     ]
+
+
+PDF_NAVY = colors.HexColor("#102033")
+PDF_GREEN = colors.HexColor("#16824a")
+PDF_BLUE = colors.HexColor("#2563eb")
+PDF_LINE = colors.HexColor("#d9dee4")
+PDF_SOFT = colors.HexColor("#f4f7fb")
+PDF_TEXT = colors.HexColor("#243244")
+PDF_MUTED = colors.HexColor("#667085")
+
+
+def money_display(value):
+    return f"UGX {Decimal(value or 0):,.2f}"
+
+
+def pdf_styles():
+    styles = getSampleStyleSheet()
+    styles.add(
+        ParagraphStyle(
+            name="DocTitle",
+            parent=styles["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=22,
+            leading=26,
+            textColor=PDF_NAVY,
+            spaceAfter=4,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="SectionTitle",
+            parent=styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=10,
+            leading=13,
+            textColor=PDF_NAVY,
+            spaceBefore=8,
+            spaceAfter=6,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="SmallMuted",
+            parent=styles["Normal"],
+            fontSize=8,
+            leading=10,
+            textColor=PDF_MUTED,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="Right",
+            parent=styles["Normal"],
+            alignment=TA_RIGHT,
+            fontSize=9,
+            leading=11,
+            textColor=PDF_TEXT,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="CenterSmall",
+            parent=styles["Normal"],
+            alignment=TA_CENTER,
+            fontSize=8,
+            leading=10,
+            textColor=PDF_MUTED,
+        )
+    )
+    return styles
+
+
+def pdf_header_footer(title):
+    def draw(canvas, document):
+        canvas.saveState()
+        width, height = A4
+        canvas.setFillColor(PDF_NAVY)
+        canvas.rect(0, height - 54, width, 54, stroke=0, fill=1)
+        canvas.setFillColor(colors.white)
+        canvas.setFont("Helvetica-Bold", 12)
+        canvas.drawString(document.leftMargin, height - 30, "Security Company Management")
+        canvas.setFont("Helvetica", 8)
+        canvas.drawString(document.leftMargin, height - 43, title)
+        canvas.setFillColor(PDF_GREEN)
+        canvas.rect(width - document.rightMargin - 86, height - 38, 86, 14, stroke=0, fill=1)
+        canvas.setFillColor(colors.white)
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.drawCentredString(width - document.rightMargin - 43, height - 34, "OFFICIAL DOCUMENT")
+        canvas.setFillColor(PDF_MUTED)
+        canvas.setFont("Helvetica", 8)
+        canvas.drawString(document.leftMargin, 24, "Generated by Security Company Management System")
+        canvas.drawRightString(width - document.rightMargin, 24, f"Page {document.page}")
+        canvas.restoreState()
+
+    return draw
+
+
+def key_value_table(rows, col_widths):
+    table = Table(rows, colWidths=col_widths, hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), PDF_SOFT),
+                ("TEXTCOLOR", (0, 0), (0, -1), PDF_MUTED),
+                ("TEXTCOLOR", (1, 0), (1, -1), PDF_TEXT),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                ("LEADING", (0, 0), (-1, -1), 11),
+                ("GRID", (0, 0), (-1, -1), 0.35, PDF_LINE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    return table
+
+
+def styled_table(data, col_widths=None, right_columns=()):
+    table = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), PDF_NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.35, PDF_LINE),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fbfcfd")]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]
+    for column in right_columns:
+        style.append(("ALIGN", (column, 1), (column, -1), "RIGHT"))
+    table.setStyle(TableStyle(style))
+    return table
+
+
+def signature_table(left_label="Prepared By", right_label="Approved By"):
+    data = [
+        ["", ""],
+        [left_label, right_label],
+    ]
+    table = Table(data, colWidths=[240, 240], hAlign="CENTER")
+    table.setStyle(
+        TableStyle(
+            [
+                ("LINEABOVE", (0, 1), (-1, 1), 0.6, PDF_LINE),
+                ("TEXTCOLOR", (0, 1), (-1, 1), PDF_MUTED),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, 0), 24),
+                ("TOPPADDING", (0, 1), (-1, 1), 6),
+            ]
+        )
+    )
+    return table
 
 
 @login_required
@@ -928,6 +1100,210 @@ def account_balances(account_types=None, end_date=None):
     return rows
 
 
+def journal_entry_totals(reference):
+    entry = (
+        models.JournalEntry.objects.prefetch_related("lines")
+        .filter(reference=reference, status=models.JournalEntry.EntryStatus.POSTED)
+        .first()
+    )
+    if not entry:
+        return None
+    debit = sum(line.debit for line in entry.lines.all())
+    credit = sum(line.credit for line in entry.lines.all())
+    return {"entry": entry, "debit": debit, "credit": credit, "balanced": debit == credit}
+
+
+def reconciliation_status(expected_amount, posted):
+    if posted is None:
+        return "Missing", expected_amount
+    if not posted["balanced"]:
+        return "Unbalanced", posted["debit"] - posted["credit"]
+    if posted["debit"] != expected_amount or posted["credit"] != expected_amount:
+        return "Difference", expected_amount - posted["debit"]
+    return "Matched", Decimal("0.00")
+
+
+def reconciliation_row(module, reference, source_label, expected_amount, posted):
+    status, difference = reconciliation_status(expected_amount, posted)
+    return {
+        "module": module,
+        "reference": reference,
+        "source_label": source_label,
+        "expected_amount": expected_amount,
+        "posted_debit": posted["debit"] if posted else Decimal("0.00"),
+        "posted_credit": posted["credit"] if posted else Decimal("0.00"),
+        "difference": difference,
+        "status": status,
+        "entry": posted["entry"] if posted else None,
+    }
+
+
+def build_reconciliation_rows():
+    rows = []
+    for invoice in models.Invoice.objects.select_related("client").order_by("-invoice_date", "invoice_number"):
+        reference = f"INV-{invoice.id}"
+        rows.append(
+            reconciliation_row(
+                "Invoice",
+                reference,
+                invoice.invoice_number,
+                invoice.total_amount,
+                journal_entry_totals(reference),
+            )
+        )
+    for payment in models.Payment.objects.select_related("invoice", "employee").order_by("-payment_date", "id"):
+        reference = f"PAY-{payment.id}"
+        target = payment.invoice.invoice_number if payment.invoice_id else payment.employee.full_name if payment.employee_id else "General"
+        rows.append(
+            reconciliation_row(
+                "Payment",
+                reference,
+                target,
+                payment.amount,
+                journal_entry_totals(reference),
+            )
+        )
+    for expense in models.Expense.objects.order_by("-expense_date", "id"):
+        reference = f"EXP-{expense.id}"
+        rows.append(
+            reconciliation_row(
+                "Expense",
+                reference,
+                expense.category,
+                expense.amount,
+                journal_entry_totals(reference),
+            )
+        )
+    for salary in models.Salary.objects.select_related("employee").order_by("-pay_period_start", "employee__first_name"):
+        reference = f"PAYROLL-{salary.id}"
+        expected = salary.gross_pay + salary.nssf_employer
+        rows.append(
+            reconciliation_row(
+                "Payroll",
+                reference,
+                f"{salary.employee.full_name} - {salary.pay_period_start:%b %Y}",
+                expected,
+                journal_entry_totals(reference),
+            )
+        )
+    return rows
+
+
+def customer_code(client):
+    prefix = models.Site.client_code_prefix(client.client_name)
+    return f"C{prefix}{client.id:04d}"[:12]
+
+
+def client_area(client):
+    site = client.sites.order_by("site_name").first()
+    if not site:
+        return "-"
+    return site.city or site.state or "-"
+
+
+def client_manager_and_collector(client):
+    deployment = (
+        models.Deployment.objects.select_related("supervisor")
+        .filter(client=client, supervisor__isnull=False)
+        .order_by("-start_date")
+        .first()
+    )
+    manager = deployment.supervisor.full_name if deployment and deployment.supervisor_id else "-"
+    return manager, manager
+
+
+def months_overdue(invoice, as_of):
+    if invoice.balance_amount <= 0:
+        return "-"
+    days = (as_of - invoice.due_date).days
+    if days <= 0:
+        return "0"
+    return str(max(1, (days + 29) // 30))
+
+
+def aging_rows(as_of):
+    rows = []
+    clients = models.Client.objects.prefetch_related("sites").order_by("client_name")
+    for client in clients:
+        invoices = models.Invoice.objects.filter(client=client, invoice_date__lte=as_of)
+        if not invoices.exists():
+            continue
+        payments = models.Payment.objects.filter(invoice__client=client, payment_date__lte=as_of)
+        invoice_total = invoices.aggregate(total=Coalesce(Sum("total_amount"), Decimal("0.00")))["total"]
+        receipts_total = payments.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
+        balance_due = invoices.aggregate(total=Coalesce(Sum("balance_amount"), Decimal("0.00")))["total"]
+        if invoice_total == 0 and receipts_total == 0 and balance_due == 0:
+            continue
+        area = client_area(client)
+        manager, debt_collector = client_manager_and_collector(client)
+        open_invoices = invoices.exclude(status=models.StatusChoices.PAID).order_by("due_date")
+        month_values = [months_overdue(invoice, as_of) for invoice in open_invoices]
+        numeric_months = [int(value) for value in month_values if str(value).isdigit()]
+        rows.append(
+            {
+                "customer_code": customer_code(client),
+                "customer_name": client.client_name,
+                "area": area,
+                "manager": manager,
+                "debt_collector": debt_collector,
+                "receipts": receipts_total,
+                "invoices": invoice_total,
+                "balance_due": balance_due,
+                "months": max(numeric_months) if numeric_months else "-",
+                "group_key": (area, manager, debt_collector),
+            }
+        )
+    groups = []
+    for key in sorted({row["group_key"] for row in rows}):
+        group_rows = [row for row in rows if row["group_key"] == key]
+        groups.append(
+            {
+                "key": key,
+                "rows": group_rows,
+                "receipts": sum(row["receipts"] for row in group_rows),
+                "invoices": sum(row["invoices"] for row in group_rows),
+                "balance_due": sum(row["balance_due"] for row in group_rows),
+            }
+        )
+    return groups
+
+
+def reconciliation_rows_for(module):
+    return [row for row in build_reconciliation_rows() if row["module"] == module]
+
+
+def reconciliation_summary(rows):
+    return {
+        "matched": sum(1 for row in rows if row["status"] == "Matched"),
+        "missing": sum(1 for row in rows if row["status"] == "Missing"),
+        "unbalanced": sum(1 for row in rows if row["status"] == "Unbalanced"),
+        "difference": sum(1 for row in rows if row["status"] == "Difference"),
+        "expected": sum(row["expected_amount"] for row in rows),
+        "posted_debit": sum(row["posted_debit"] for row in rows),
+        "posted_credit": sum(row["posted_credit"] for row in rows),
+        "variance": sum(row["difference"] for row in rows),
+    }
+
+
+def render_reconciliation_module(request, module, template_title):
+    rows = reconciliation_rows_for(module)
+    selected_status = request.GET.get("status", "").strip()
+    if selected_status:
+        rows = [row for row in rows if row["status"] == selected_status]
+    return render(
+        request,
+        "core/reconciliation_module_report.html",
+        {
+            "title": template_title,
+            "module": module,
+            "rows": rows,
+            "summary": reconciliation_summary(rows),
+            "selected_status": selected_status,
+            "status_options": ["Matched", "Missing", "Difference", "Unbalanced"],
+        },
+    )
+
+
 @login_required
 @user_passes_test(is_manager)
 def post_accounting_entries(request):
@@ -1006,6 +1382,61 @@ def income_statement(request):
             "net_income": total_income - total_expenses,
         },
     )
+
+
+@login_required
+@user_passes_test(is_manager)
+def receivables_aging(request):
+    as_of = parse_date(request.GET.get("as_of") or "") or timezone.localdate()
+    groups = aging_rows(as_of)
+    return render(
+        request,
+        "core/receivables_aging.html",
+        {
+            "as_of": as_of,
+            "groups": groups,
+            "total_receipts": sum(group["receipts"] for group in groups),
+            "total_invoices": sum(group["invoices"] for group in groups),
+            "grand_total": sum(group["balance_due"] for group in groups),
+        },
+    )
+
+
+@login_required
+@user_passes_test(is_manager)
+def reconciliation_report(request):
+    rows = build_reconciliation_rows()
+    selected_status = request.GET.get("status", "").strip()
+    if selected_status:
+        rows = [row for row in rows if row["status"] == selected_status]
+    return render(
+        request,
+        "core/reconciliation_report.html",
+        {
+            "rows": rows,
+            "summary": reconciliation_summary(rows),
+            "selected_status": selected_status,
+            "status_options": ["Matched", "Missing", "Difference", "Unbalanced"],
+        },
+    )
+
+
+@login_required
+@user_passes_test(is_manager)
+def payroll_reconciliation_report(request):
+    return render_reconciliation_module(request, "Payroll", "Payroll Reconciliation")
+
+
+@login_required
+@user_passes_test(is_manager)
+def expense_reconciliation_report(request):
+    return render_reconciliation_module(request, "Expense", "Expense Reconciliation")
+
+
+@login_required
+@user_passes_test(is_manager)
+def payment_reconciliation_report(request):
+    return render_reconciliation_module(request, "Payment", "Payment Reconciliation")
 
 
 @login_required
@@ -1104,6 +1535,41 @@ def reports_center(request):
                     "description": "Review revenue, expenses, and net income.",
                     "url_name": "core:income_statement",
                     "icon": "fa-chart-line",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Receivables Aging",
+                    "description": "Group unpaid invoice balances by overdue age.",
+                    "url_name": "core:receivables_aging",
+                    "icon": "fa-clock-rotate-left",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Automated Reconciliation",
+                    "description": "Compare invoices, payments, expenses, and payroll against posted journals.",
+                    "url_name": "core:reconciliation_report",
+                    "icon": "fa-code-compare",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Payroll Reconciliation",
+                    "description": "Review payroll records against payroll journal postings.",
+                    "url_name": "core:payroll_reconciliation_report",
+                    "icon": "fa-money-check-dollar",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Expense Reconciliation",
+                    "description": "Review operating expenses against expense journal postings.",
+                    "url_name": "core:expense_reconciliation_report",
+                    "icon": "fa-receipt",
+                    "manager_only": True,
+                },
+                {
+                    "title": "Payment Reconciliation",
+                    "description": "Review received and paid amounts against payment journal postings.",
+                    "url_name": "core:payment_reconciliation_report",
+                    "icon": "fa-money-bill-transfer",
                     "manager_only": True,
                 },
                 {
@@ -1285,6 +1751,11 @@ def deployments_import_excel(request):
             messages.error(request, "Please choose an Excel deployment file to upload.")
             return redirect("core:deployments_import_excel")
         try:
+            validate_excel_upload(deployment_file)
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+            return redirect("core:deployments_import_excel")
+        try:
             workbook = load_workbook(deployment_file, data_only=True)
             worksheet = workbook.active
         except Exception:
@@ -1387,48 +1858,259 @@ def deployments_import_excel(request):
 
 @login_required
 @user_passes_test(is_manager)
+def invoice_pdf(request, pk):
+    invoice = get_object_or_404(
+        models.Invoice.objects.select_related("client", "contract", "site"),
+        pk=pk,
+    )
+    output = BytesIO()
+    document = SimpleDocTemplate(output, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=76, bottomMargin=42)
+    styles = pdf_styles()
+
+    billing_label = "All contract sites" if invoice.billing_scope == models.Invoice.BillingScope.CONTRACT else (
+        invoice.site.site_name if invoice.site_id else "One site"
+    )
+    status_color = PDF_GREEN if invoice.status == models.StatusChoices.PAID else colors.HexColor("#dc2626")
+    status_table = Table(
+        [[invoice.get_status_display().upper()]],
+        colWidths=[96],
+        hAlign="RIGHT",
+    )
+    status_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), status_color),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]
+        )
+    )
+
+    title = Table(
+        [
+            [
+                Paragraph("TAX INVOICE", styles["DocTitle"]),
+                status_table,
+            ],
+            [
+                Paragraph(f"Invoice No: <b>{invoice.invoice_number}</b>", styles["SmallMuted"]),
+                Paragraph(f"Billing: <b>{billing_label}</b>", styles["Right"]),
+            ],
+        ],
+        colWidths=[330, 190],
+    )
+    title.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+
+    client_details = [
+        ["Client", invoice.client_name or invoice.client.client_name],
+        ["Contact", invoice.client_contact_person or "-"],
+        ["Phone", invoice.client_phone_number or "-"],
+        ["Email", invoice.client_email or "-"],
+        ["Address", invoice.client_address or "-"],
+    ]
+    invoice_details = [
+        ["Invoice Date", invoice.invoice_date],
+        ["Due Date", invoice.due_date],
+        ["Billing Month", invoice.billing_month or "-"],
+        ["Contract", invoice.contract.contract_number if invoice.contract_id else "-"],
+        ["Scope", billing_label],
+    ]
+    details = Table(
+        [
+            [
+                Paragraph("Bill To", styles["SectionTitle"]),
+                Paragraph("Invoice Details", styles["SectionTitle"]),
+            ],
+            [
+                key_value_table(client_details, [76, 174]),
+                key_value_table(invoice_details, [86, 164]),
+            ],
+        ],
+        colWidths=[260, 260],
+    )
+    details.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+
+    line_items = [["Description", "Qty", "Rate", "Amount"]]
+    item_map = [
+        ("Guarding services", invoice.guard_count, invoice.rate_per_guard),
+        ("Guns", invoice.gun_count, invoice.gun_rate),
+        ("Radios", invoice.radio_count, invoice.radio_rate),
+        ("Metal detectors", invoice.metal_detector_count, invoice.metal_detector_rate),
+        ("Walk through machines", invoice.walk_through_machine_count, invoice.walk_through_machine_rate),
+        ("Dogs", invoice.dog_count, invoice.dog_rate),
+    ]
+    for description, count, rate in item_map:
+        if count:
+            line_items.append([description, count, money_display(rate), money_display(Decimal(count) * Decimal(rate or 0))])
+    if len(line_items) == 1:
+        line_items.append(["Billing services", 1, money_display(invoice.subtotal_amount), money_display(invoice.subtotal_amount)])
+
+    totals = [
+        ["Subtotal", money_display(invoice.subtotal_amount)],
+        [f"VAT ({invoice.vat_rate * 100:.0f}%)", money_display(invoice.vat_amount)],
+        ["Total", money_display(invoice.total_amount)],
+        ["Paid", money_display(invoice.paid_amount)],
+        ["Balance Due", money_display(invoice.balance_amount)],
+    ]
+    totals_table = Table(totals, colWidths=[120, 130], hAlign="RIGHT")
+    totals_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("TEXTCOLOR", (0, 0), (-1, -1), PDF_TEXT),
+                ("GRID", (0, 0), (-1, -1), 0.35, PDF_LINE),
+                ("BACKGROUND", (0, -1), (-1, -1), PDF_NAVY),
+                ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+
+    note = Paragraph(
+        "Thank you for your business. Please reference the invoice number when making payment.",
+        styles["SmallMuted"],
+    )
+    elements = [
+        title,
+        Spacer(1, 14),
+        details,
+        Spacer(1, 14),
+        Paragraph("Billing Items", styles["SectionTitle"]),
+        styled_table(line_items, col_widths=[260, 60, 100, 100], right_columns=(1, 2, 3)),
+        Spacer(1, 12),
+        totals_table,
+        Spacer(1, 18),
+        note,
+        Spacer(1, 22),
+        signature_table("Prepared By", "Client Acknowledgement"),
+    ]
+    document.build(
+        elements,
+        onFirstPage=pdf_header_footer("Invoice"),
+        onLaterPages=pdf_header_footer("Invoice"),
+    )
+    response = HttpResponse(output.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="invoice-{invoice.invoice_number}.pdf"'
+    return response
+
+
+@login_required
+@user_passes_test(is_manager)
 def payslip_pdf(request, pk):
     salary = get_object_or_404(models.Salary.objects.select_related("employee", "employee__position"), pk=pk)
     refresh_payroll_for_date(salary.pay_period_start)
     salary.refresh_from_db()
     output = BytesIO()
-    document = SimpleDocTemplate(output, pagesize=A4, rightMargin=48, leftMargin=48, topMargin=48, bottomMargin=48)
-    styles = getSampleStyleSheet()
+    document = SimpleDocTemplate(output, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=76, bottomMargin=42)
+    styles = pdf_styles()
     employee = salary.employee
-    rows = [
+    title = Table(
+        [
+            [
+                Paragraph("EMPLOYEE PAYSLIP", styles["DocTitle"]),
+                Paragraph(f"Net Pay<br/><b>{money_display(salary.net_salary)}</b>", styles["Right"]),
+            ],
+            [
+                Paragraph(f"Pay period: <b>{salary.pay_period_start} to {salary.pay_period_end}</b>", styles["SmallMuted"]),
+                Paragraph(f"Status: <b>{salary.get_status_display()}</b>", styles["Right"]),
+            ],
+        ],
+        colWidths=[330, 190],
+    )
+    title.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+
+    employee_rows = [
         ["Employee", employee.full_name],
         ["Company Number", employee.company_number or "-"],
         ["NSSF Number", employee.nssf_number or "-"],
         ["Bank Account", employee.bank_account or "-"],
         ["Position", employee.position.position_title if employee.position else "-"],
+        ["Payment Date", salary.payment_date or "-"],
+        ["Payment Method", salary.payment_method or "-"],
+    ]
+    attendance_rows = [
         ["Pay Period", f"{salary.pay_period_start} to {salary.pay_period_end}"],
         ["Attendance Days", salary.attendance_days],
         ["Basic Hours", salary.basic_hours],
         ["Overtime Hours", salary.overtime_hours],
-        ["Basic Pay", salary.basic_salary],
-        ["Overtime Pay", salary.overtime_pay],
-        ["Allowances", salary.allowances],
-        ["Bonus", salary.bonus],
-        ["Gross Pay", salary.gross_pay],
-        ["NSSF Employee Deduction", salary.nssf_employee],
-        ["Other Deductions", salary.deductions],
-        ["Total Deductions", salary.total_deductions],
-        ["Employer NSSF Contribution", salary.nssf_employer],
-        ["Net Pay", salary.net_salary],
     ]
-    table = Table(rows, colWidths=[180, 260])
-    table.setStyle(
+    earnings = [
+        ["Earnings", "Amount"],
+        ["Basic Pay", money_display(salary.basic_salary)],
+        ["Overtime Pay", money_display(salary.overtime_pay)],
+        ["Allowances", money_display(salary.allowances)],
+        ["Bonus", money_display(salary.bonus)],
+        ["Gross Pay", money_display(salary.gross_pay)],
+    ]
+    deductions = [
+        ["Deductions", "Amount"],
+        ["NSSF Employee", money_display(salary.nssf_employee)],
+        ["Other Deductions", money_display(salary.deductions)],
+        ["Total Deductions", money_display(salary.total_deductions)],
+        ["Employer NSSF", money_display(salary.nssf_employer)],
+        ["Net Pay", money_display(salary.net_salary)],
+    ]
+    details = Table(
+        [
+            [
+                Paragraph("Employee Details", styles["SectionTitle"]),
+                Paragraph("Attendance Summary", styles["SectionTitle"]),
+            ],
+            [
+                key_value_table(employee_rows, [90, 160]),
+                key_value_table(attendance_rows, [100, 150]),
+            ],
+        ],
+        colWidths=[260, 260],
+    )
+    details.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    pay_tables = Table(
+        [[styled_table(earnings, col_widths=[160, 90], right_columns=(1,)), styled_table(deductions, col_widths=[160, 90], right_columns=(1,))]],
+        colWidths=[260, 260],
+    )
+    pay_tables.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    net_summary = Table(
+        [["NET SALARY PAYABLE", money_display(salary.net_salary)]],
+        colWidths=[320, 200],
+    )
+    net_summary.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f4f6f8")),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d9dee4")),
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BACKGROUND", (0, 0), (-1, -1), PDF_GREEN),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 12),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
             ]
         )
     )
-    elements = [Paragraph("Employee Payslip", styles["Title"]), Spacer(1, 8), table]
-    document.build(elements)
+    elements = [
+        title,
+        Spacer(1, 14),
+        details,
+        Spacer(1, 14),
+        pay_tables,
+        Spacer(1, 14),
+        net_summary,
+        Spacer(1, 18),
+        Paragraph("This payslip is system generated and confidential to the employee named above.", styles["CenterSmall"]),
+        Spacer(1, 22),
+        signature_table("Prepared By", "Employee Signature"),
+    ]
+    document.build(
+        elements,
+        onFirstPage=pdf_header_footer("Payslip"),
+        onLaterPages=pdf_header_footer("Payslip"),
+    )
     response = HttpResponse(output.getvalue(), content_type="application/pdf")
     filename = f"payslip-{employee.company_number or employee.id}-{salary.pay_period_start}.pdf"
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
@@ -1968,6 +2650,11 @@ def upload_duty_roster(request):
         roster_file = request.FILES.get("roster_file")
         if not roster_file:
             messages.error(request, "Please choose an Excel duty roster to upload.")
+            return redirect("core:upload_duty_roster")
+        try:
+            validate_excel_upload(roster_file)
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
             return redirect("core:upload_duty_roster")
         try:
             workbook = load_workbook(roster_file, data_only=True)

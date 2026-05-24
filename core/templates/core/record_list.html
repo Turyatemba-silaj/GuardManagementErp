@@ -49,6 +49,9 @@
                         {% endfor %}
                         <td>
                             <div class="actions">
+                                {% if slug == "invoices" %}
+                                    <a class="btn btn-light" href="{% url 'core:invoice_pdf' row.object.pk %}">PDF</a>
+                                {% endif %}
                                 {% if can_edit_record %}
                                     <a class="btn btn-warning" href="{% url 'core:record_edit' slug row.object.pk %}">Edit</a>
                                 {% endif %}

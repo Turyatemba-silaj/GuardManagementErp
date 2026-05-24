@@ -1,0 +1,81 @@
+{% extends "core/base.html" %}
+
+{% block title %}Automated Reconciliation{% endblock %}
+{% block page_label %}Automated Reconciliation{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            {% block reconciliation_heading %}
+                <h1>Automated Reconciliation</h1>
+                <p class="muted">Compares source finance records with posted journal entries.</p>
+            {% endblock %}
+        </div>
+        {% include "core/accounting_nav.html" %}
+    </div>
+    <form class="filter-form" method="get">
+        <div class="field">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+                <option value="">All statuses</option>
+                {% for status in status_options %}
+                    <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Filter</button>
+        {% if selected_status %}
+            <a class="btn btn-light" href="{{ request.path }}">Clear</a>
+        {% endif %}
+    </form>
+    <section class="metric-grid" aria-label="Reconciliation summary">
+        <article class="metric-card"><i class="fa-solid fa-circle-check"></i><div><strong>{{ summary.matched }}</strong><span>Matched</span></div></article>
+        <article class="metric-card"><i class="fa-solid fa-link-slash"></i><div><strong>{{ summary.missing }}</strong><span>Missing Posts</span></div></article>
+        <article class="metric-card"><i class="fa-solid fa-scale-unbalanced"></i><div><strong>{{ summary.difference }}</strong><span>Differences</span></div></article>
+        <article class="metric-card"><i class="fa-solid fa-triangle-exclamation"></i><div><strong>{{ summary.unbalanced }}</strong><span>Unbalanced</span></div></article>
+        <article class="metric-card"><i class="fa-solid fa-coins"></i><div><strong>{{ summary.expected }}</strong><span>Expected</span></div></article>
+        <article class="metric-card"><i class="fa-solid fa-code-compare"></i><div><strong>{{ summary.variance }}</strong><span>Variance</span></div></article>
+    </section>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Module</th>
+                    <th>Reference</th>
+                    <th>Source</th>
+                    <th>Expected</th>
+                    <th>Posted Debit</th>
+                    <th>Posted Credit</th>
+                    <th>Variance</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.module }}</td>
+                        <td>{{ row.reference }}</td>
+                        <td>{{ row.source_label }}</td>
+                        <td>{{ row.expected_amount }}</td>
+                        <td>{{ row.posted_debit }}</td>
+                        <td>{{ row.posted_credit }}</td>
+                        <td>{{ row.difference }}</td>
+                        <td>
+                            {% if row.status == "Matched" %}
+                                <span class="status-pill is-green">{{ row.status }}</span>
+                            {% elif row.status == "Missing" %}
+                                <span class="status-pill is-red">{{ row.status }}</span>
+                            {% else %}
+                                <span class="status-pill is-blue">{{ row.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr class="empty-row"><td colspan="8">No reconciliation rows found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

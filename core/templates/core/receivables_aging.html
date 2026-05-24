@@ -1,0 +1,170 @@
+{% extends "core/base.html" %}
+
+{% block title %}Receivables Aging{% endblock %}
+{% block page_label %}Receivables Aging{% endblock %}
+
+{% block extra_head %}
+<style>
+    .aging-report-head {
+        margin: 16px 0;
+        padding: 16px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        border: 1px solid var(--sentinel-line);
+        border-left: 4px solid var(--sentinel-green);
+        border-radius: 8px;
+        background: linear-gradient(135deg, #ffffff, #f8fbff);
+    }
+    .aging-report-head h2 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 850;
+        color: var(--sentinel-ink);
+    }
+    .aging-report-head p {
+        margin: 4px 0 0;
+    }
+    .aging-report-period {
+        min-width: 150px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: var(--sentinel-ink);
+        text-align: right;
+        font-weight: 800;
+    }
+    .aging-report-period span {
+        display: block;
+        color: var(--sentinel-muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+    .aging-table th,
+    .aging-table td {
+        padding: 7px 8px;
+        font-size: 12px;
+        line-height: 1.3;
+        white-space: nowrap;
+    }
+    .aging-table thead th {
+        background: var(--sentinel-rail);
+        color: #fff;
+        border-color: rgba(255,255,255,.16);
+    }
+    .aging-table tbody tr:nth-child(even):not(.aging-subtotal):not(.aging-grand-total) {
+        background: #fbfcfd;
+    }
+    .aging-table td:nth-child(3) {
+        white-space: normal;
+        min-width: 220px;
+    }
+    .aging-subtotal td {
+        border-top: 2px solid var(--sentinel-green);
+        font-weight: 800;
+        background: #f2fbf6;
+    }
+    .aging-grand-total td {
+        background: var(--sentinel-rail);
+        color: #fff;
+        font-weight: 850;
+    }
+    @media (max-width: 720px) {
+        .aging-report-head {
+            flex-direction: column;
+        }
+        .aging-report-period {
+            width: 100%;
+            text-align: left;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Receivables Aging</h1>
+            <p class="muted">Customer aging listing using the uploaded reference format.</p>
+        </div>
+        {% include "core/accounting_nav.html" %}
+    </div>
+    <form class="filter-form" method="get">
+        <div class="field">
+            <label for="as_of">As Of</label>
+            <input id="as_of" name="as_of" type="date" value="{{ as_of|date:'Y-m-d' }}">
+        </div>
+        <button class="btn btn-primary" type="submit">Refresh</button>
+    </form>
+    <div class="aging-report-head">
+        <div>
+            <h2>Receivables Aging Report</h2>
+            <p class="muted">Customer balances grouped by area, manager, and debt collector.</p>
+        </div>
+        <div class="aging-report-period">
+            <span>As Of</span>
+            {{ as_of|date:"d-m-y" }}
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table class="aging-table">
+            {% for group in groups %}
+                <thead>
+                    <tr>
+                        <th>NO</th>
+                        <th>Customer Code</th>
+                        <th>Customer Name</th>
+                        <th>Area</th>
+                        <th>Manager</th>
+                        <th>Debt Collector</th>
+                        <th>Receipts</th>
+                        <th>Invoices</th>
+                        <th>Balance Due</th>
+                        <th>Months</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in group.rows %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td>{{ row.customer_code }}</td>
+                            <td>{{ row.customer_name }}</td>
+                            <td>{{ row.area }}</td>
+                            <td>{{ row.manager }}</td>
+                            <td>{{ row.debt_collector }}</td>
+                            <td style="text-align: right;">{{ row.receipts }}</td>
+                            <td style="text-align: right;">{{ row.invoices }}</td>
+                            <td style="text-align: right;">{{ row.balance_due }}</td>
+                            <td style="text-align: right;">{{ row.months }}</td>
+                        </tr>
+                    {% endfor %}
+                    <tr class="aging-subtotal">
+                        <td colspan="6"></td>
+                        <td style="text-align: right;">{{ group.receipts }}</td>
+                        <td style="text-align: right;">{{ group.invoices }}</td>
+                        <td style="text-align: right;">{{ group.balance_due }}</td>
+                        <td></td>
+                    </tr>
+                    <tr><td colspan="10">&nbsp;</td></tr>
+                </tbody>
+            {% empty %}
+                <tbody>
+                    <tr class="empty-row"><td colspan="10">No invoice activity found for this aging date.</td></tr>
+                </tbody>
+            {% endfor %}
+            <tbody>
+                <tr class="aging-grand-total">
+                    <td colspan="6">Grand Total</td>
+                    <td style="text-align: right;">{{ total_receipts }}</td>
+                    <td style="text-align: right;">{{ total_invoices }}</td>
+                    <td style="text-align: right;">{{ grand_total }}</td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

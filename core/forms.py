@@ -1,6 +1,15 @@
 from django import forms
 
 from . import models
+from .security import validate_model_upload
+
+
+class SecureModelForm(forms.ModelForm):
+    def clean(self):
+        cleaned_data = super().clean()
+        for field_name, uploaded_file in self.files.items():
+            validate_model_upload(field_name, uploaded_file)
+        return cleaned_data
 
 
 class InvoiceForm(forms.ModelForm):

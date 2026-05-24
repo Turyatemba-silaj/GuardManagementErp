@@ -50,7 +50,7 @@ def build_sidebar_nav(groups, can_manage_payroll):
 
     operations = [
         nav_item("Command Dashboard", reverse("core:dashboard"), "fa-gauge-high"),
-        nav_item("Roster Attendance", reverse("core:attendances"), "fa-calendar-check"),
+        nav_item("Attendances", reverse("core:attendances"), "fa-calendar-check"),
         nav_item("Upload Duty Roster", reverse("core:upload_duty_roster"), "fa-file-excel"),
         *operations_models,
     ]
@@ -80,6 +80,11 @@ def build_sidebar_nav(groups, can_manage_payroll):
                 nav_item("Trial Balance", reverse("core:trial_balance"), "fa-scale-balanced"),
                 nav_item("Balance Sheet", reverse("core:balance_sheet"), "fa-table-columns"),
                 nav_item("Income Statement", reverse("core:income_statement"), "fa-chart-line"),
+                nav_item("Receivables Aging", reverse("core:receivables_aging"), "fa-clock-rotate-left"),
+                nav_item("Reconciliation", reverse("core:reconciliation_report"), "fa-code-compare"),
+                nav_item("Payroll Reconciliation", reverse("core:payroll_reconciliation_report"), "fa-money-check-dollar"),
+                nav_item("Expense Reconciliation", reverse("core:expense_reconciliation_report"), "fa-receipt"),
+                nav_item("Payment Reconciliation", reverse("core:payment_reconciliation_report"), "fa-money-bill-transfer"),
             ]
         )
 

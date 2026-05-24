@@ -1,0 +1,9 @@
+{% extends "core/reconciliation_report.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+{% block page_label %}{{ title }}{% endblock %}
+
+{% block reconciliation_heading %}
+    <h1>{{ title }}</h1>
+    <p class="muted">{{ module }} source records compared with posted journal entries.</p>
+{% endblock %}

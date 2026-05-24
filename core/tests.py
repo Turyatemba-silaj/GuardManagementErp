@@ -118,6 +118,79 @@ class FinanceCalculationTests(TestCase):
         self.assertEqual(invoice.balance_amount, Decimal("0.00"))
         self.assertEqual(invoice.status, StatusChoices.PAID)
 
+    def test_invoice_pdf_is_downloadable(self):
+        client = Client.objects.create(
+            client_name="Acme Mall",
+            contact_person="Jane",
+            phone_number="0711111111",
+            email="jane@example.com",
+            address="Plot 10 Kampala",
+            contract_start_date="2026-01-01",
+        )
+        invoice = Invoice.objects.create(
+            client=client,
+            invoice_number="INV-PDF-001",
+            due_date="2026-06-15",
+            guard_count=2,
+            rate_per_guard=Decimal("300000.00"),
+            paid_amount=Decimal("100000.00"),
+        )
+
+        response = self.client.get(f"/invoices/{invoice.pk}/pdf/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_finance_aging_and_reconciliation_reports_render(self):
+        client = Client.objects.create(
+            client_name="Aging Client",
+            contact_person="Jane",
+            phone_number="0711111111",
+            contract_start_date="2026-01-01",
+        )
+        posted_invoice = Invoice.objects.create(
+            client=client,
+            invoice_number="INV-POSTED-001",
+            invoice_date="2026-05-01",
+            due_date="2026-05-15",
+            guard_count=1,
+            rate_per_guard=Decimal("100000.00"),
+        )
+        missing_invoice = Invoice.objects.create(
+            client=client,
+            invoice_number="INV-MISSING-001",
+            invoice_date="2026-05-01",
+            due_date="2026-04-15",
+            guard_count=1,
+            rate_per_guard=Decimal("200000.00"),
+        )
+        post_invoice(posted_invoice)
+
+        aging_response = self.client.get("/accounting/receivables-aging/", {"as_of": "2026-05-24"})
+        reconciliation_response = self.client.get("/accounting/reconciliation/")
+        payroll_reconciliation_response = self.client.get("/accounting/reconciliation/payroll/")
+        expense_reconciliation_response = self.client.get("/accounting/reconciliation/expenses/")
+        payment_reconciliation_response = self.client.get("/accounting/reconciliation/payments/")
+
+        self.assertEqual(aging_response.status_code, 200)
+        self.assertContains(aging_response, "Receivables Aging Report")
+        self.assertContains(aging_response, "Customer Code")
+        self.assertContains(aging_response, "Debt Collector")
+        self.assertContains(aging_response, "Balance Due")
+        self.assertContains(aging_response, "Aging Client")
+        self.assertEqual(reconciliation_response.status_code, 200)
+        self.assertContains(reconciliation_response, "INV-POSTED-001")
+        self.assertContains(reconciliation_response, "Matched")
+        self.assertContains(reconciliation_response, "INV-MISSING-001")
+        self.assertContains(reconciliation_response, "Missing")
+        self.assertEqual(payroll_reconciliation_response.status_code, 200)
+        self.assertContains(payroll_reconciliation_response, "Payroll Reconciliation")
+        self.assertEqual(expense_reconciliation_response.status_code, 200)
+        self.assertContains(expense_reconciliation_response, "Expense Reconciliation")
+        self.assertEqual(payment_reconciliation_response.status_code, 200)
+        self.assertContains(payment_reconciliation_response, "Payment Reconciliation")
+
     def test_budget_remaining_amount_is_calculated(self):
         budget = Budget.objects.create(
             year=2026,
