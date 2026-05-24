@@ -41,4 +41,4 @@ DJANGO_DB_PORT=5432
 
 If PostgreSQL is used, add the required database driver to `requirements.txt`.
 
-For short-term Vercel testing, the app uses signed-cookie sessions on Vercel and disables the automatic `last_login` database write. That can allow login to work with a bundled read-only SQLite database, but any real data changes still require a writable production database.
+For short-term Vercel testing, the app uses signed-cookie sessions on Vercel, disables the automatic `last_login` database write, and can authenticate an existing bundled user with `DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD`. Any real data changes still require a writable production database.
