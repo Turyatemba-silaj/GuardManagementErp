@@ -5,9 +5,11 @@ from django.contrib.auth.models import Group, User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
 
+from .permissions import sync_system_admin_role
 from .models import (
     Account,
     Budget,
@@ -42,6 +44,40 @@ from .models import (
 )
 from .accounting import ensure_default_accounts, post_all_accounting, post_invoice, post_salary
 from .crud import MODEL_REGISTRY
+
+
+class AdminRolePermissionTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username="staff-admin",
+            password="pass",
+            is_staff=True,
+            is_superuser=False,
+        )
+        sync_system_admin_role(assign_active_staff=True)
+        self.admin_user.refresh_from_db()
+        self.client.force_login(self.admin_user)
+
+    def test_system_admin_role_can_manage_users_without_superuser(self):
+        self.assertFalse(self.admin_user.is_superuser)
+        self.assertTrue(self.admin_user.has_perm("auth.add_user"))
+        self.assertTrue(self.admin_user.has_perm("auth.change_user"))
+        self.assertTrue(self.admin_user.has_perm("auth.view_group"))
+
+        response = self.client.get(reverse("admin:auth_user_add"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Create user")
+        self.assertContains(response, "Role assignment")
+
+    def test_user_change_form_uses_roles_instead_of_raw_permission_wall(self):
+        target = User.objects.create_user(username="new-operator", password="pass", is_staff=True)
+
+        response = self.client.get(reverse("admin:auth_user_change", args=[target.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Role assignment")
+        self.assertNotContains(response, "User permissions")
 
 
 class FinanceCalculationTests(TestCase):

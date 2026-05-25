@@ -1,5 +1,6 @@
 HR_MANAGER_GROUP = "Human Resources Manager"
 MANAGER_GROUP = "Manager"
+SYSTEM_ADMIN_GROUP = "System Administrator"
 SUPERVISOR_GROUP = "Supervisor"
 GUARD_GROUP = "Guard"
 
@@ -20,11 +21,13 @@ def in_group(user, group_name):
 
 
 def is_hr_manager(user):
-    return user.is_authenticated and (user.is_superuser or in_group(user, HR_MANAGER_GROUP))
+    return user.is_authenticated and (user.is_superuser or in_group(user, SYSTEM_ADMIN_GROUP) or in_group(user, HR_MANAGER_GROUP))
 
 
 def is_manager(user):
-    return user.is_authenticated and (user.is_superuser or in_group(user, MANAGER_GROUP) or in_group(user, HR_MANAGER_GROUP))
+    return user.is_authenticated and (
+        user.is_superuser or in_group(user, SYSTEM_ADMIN_GROUP) or in_group(user, MANAGER_GROUP) or in_group(user, HR_MANAGER_GROUP)
+    )
 
 
 def is_supervisor(user):

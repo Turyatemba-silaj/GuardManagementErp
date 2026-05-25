@@ -1,6 +1,85 @@
 from django.contrib import admin
+from django.contrib.admin.sites import NotRegistered
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import GroupAdmin as DjangoGroupAdmin
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.contrib.auth.models import Group
 
 from . import models
+
+
+admin.site.site_header = "Sentinel ERP Administration"
+admin.site.site_title = "Sentinel ERP"
+admin.site.index_title = "ERP Control Center"
+
+User = get_user_model()
+
+for auth_model in (User, Group):
+    try:
+        admin.site.unregister(auth_model)
+    except NotRegistered:
+        pass
+
+
+@admin.register(User)
+class SentinelUserAdmin(DjangoUserAdmin):
+    list_display = ("username", "full_name", "email", "role_groups", "is_staff", "is_active", "last_login")
+    list_filter = ("is_active", "is_staff", "groups")
+    search_fields = ("username", "first_name", "last_name", "email")
+    ordering = ("username",)
+    filter_horizontal = ("groups",)
+    readonly_fields = ("last_login", "date_joined")
+    save_on_top = True
+
+    fieldsets = (
+        ("Account", {"fields": ("username", "password")}),
+        ("Personal details", {"fields": ("first_name", "last_name", "email")}),
+        ("Role assignment", {"fields": ("groups",), "description": "Assign one or more ERP roles. Role permissions are managed under Groups."}),
+        ("Access status", {"fields": ("is_active", "is_staff")}),
+        ("Important dates", {"fields": ("last_login", "date_joined")}),
+    )
+    add_fieldsets = (
+        (
+            "Create user",
+            {
+                "classes": ("wide",),
+                "fields": ("username", "usable_password", "password1", "password2"),
+            },
+        ),
+        ("Role assignment", {"fields": ("groups",)}),
+        ("Access status", {"fields": ("is_active", "is_staff")}),
+    )
+
+    @admin.display(description="Name")
+    def full_name(self, obj):
+        return obj.get_full_name() or "-"
+
+    @admin.display(description="Roles")
+    def role_groups(self, obj):
+        groups = list(obj.groups.values_list("name", flat=True))
+        return ", ".join(groups) if groups else "-"
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("groups")
+
+    def save_model(self, request, obj, form, change):
+        obj.is_superuser = False
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(Group)
+class SentinelGroupAdmin(DjangoGroupAdmin):
+    list_display = ("name", "permission_total", "user_total")
+    search_fields = ("name", "permissions__name", "permissions__codename")
+    filter_horizontal = ("permissions",)
+
+    @admin.display(description="Permissions")
+    def permission_total(self, obj):
+        return obj.permissions.count()
+
+    @admin.display(description="Users")
+    def user_total(self, obj):
+        return obj.user_set.count()
 
 
 @admin.register(models.Client)
