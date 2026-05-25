@@ -1,0 +1,220 @@
+:root {
+    --sentinel-ink: #111827;
+    --sentinel-text: #253244;
+    --sentinel-muted: #64748b;
+    --sentinel-bg: #f4f6f8;
+    --sentinel-panel: #ffffff;
+    --sentinel-line: #dbe3ec;
+    --sentinel-rail: #0f172a;
+    --sentinel-rail-soft: #172036;
+    --sentinel-green: #16a34a;
+    --sentinel-blue: #2563eb;
+    --sentinel-amber: #f59e0b;
+    --sentinel-red: #dc2626;
+}
+
+body {
+    background: var(--sentinel-bg);
+    color: var(--sentinel-text);
+    font-size: 14px;
+}
+
+body,
+.main-header,
+.main-sidebar,
+.content-wrapper,
+.card,
+.btn,
+.form-control,
+.select2-container {
+    font-family: Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.main-sidebar {
+    background:
+        linear-gradient(180deg, rgba(22, 163, 74, .16), rgba(37, 99, 235, .07) 32%, transparent 66%),
+        var(--sentinel-rail);
+}
+
+.brand-link {
+    min-height: 66px;
+    border-bottom: 1px solid rgba(255, 255, 255, .1) !important;
+    color: #f8fafc !important;
+    font-weight: 800;
+    letter-spacing: 0;
+}
+
+.brand-link .brand-text {
+    font-weight: 800 !important;
+}
+
+.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link {
+    color: #dbeafe;
+    border-radius: 7px;
+    margin: 2px 8px;
+}
+
+.sidebar-dark-primary .nav-sidebar > .nav-item > .nav-link.active,
+.sidebar-dark-primary .nav-sidebar > .nav-item.menu-open > .nav-link {
+    background: rgba(22, 163, 74, .2);
+    color: #ffffff;
+    box-shadow: inset 3px 0 0 var(--sentinel-green);
+}
+
+.nav-sidebar .nav-treeview > .nav-item > .nav-link {
+    margin: 1px 8px 1px 20px;
+    border-radius: 6px;
+}
+
+.main-header {
+    border-bottom: 1px solid var(--sentinel-line);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.content-wrapper {
+    background: var(--sentinel-bg);
+}
+
+.content-header h1 {
+    color: var(--sentinel-ink);
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: 0;
+}
+
+.breadcrumb {
+    font-size: 12px;
+}
+
+.card {
+    border: 1px solid var(--sentinel-line);
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, .06);
+}
+
+.card-header {
+    background: var(--sentinel-panel);
+    border-bottom: 1px solid var(--sentinel-line);
+}
+
+.card-title {
+    color: var(--sentinel-ink);
+    font-weight: 800;
+}
+
+.table {
+    color: var(--sentinel-text);
+}
+
+.table thead th,
+.table thead td {
+    background: #f8fafc;
+    border-bottom: 1px solid var(--sentinel-line);
+    color: #475569;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.table tbody tr:hover {
+    background: #f8fbff;
+}
+
+.form-control,
+.select2-container--default .select2-selection--single,
+.select2-container--default .select2-selection--multiple {
+    min-height: 38px;
+    border-color: #cbd5e1;
+    border-radius: 7px;
+}
+
+.form-control:focus,
+.select2-container--default.select2-container--focus .select2-selection--multiple,
+.select2-container--default .select2-selection--single:focus {
+    border-color: var(--sentinel-blue);
+    box-shadow: 0 0 0 .2rem rgba(37, 99, 235, .12);
+}
+
+label,
+.form-group label {
+    color: #334155;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.btn {
+    border-radius: 7px;
+    font-weight: 750;
+}
+
+.btn-primary,
+.btn-success {
+    background: var(--sentinel-green);
+    border-color: var(--sentinel-green);
+}
+
+.btn-primary:hover,
+.btn-success:hover {
+    background: #15803d;
+    border-color: #15803d;
+}
+
+.btn-danger {
+    background: var(--sentinel-red);
+    border-color: var(--sentinel-red);
+}
+
+.object-tools .btn,
+.submit-row .btn,
+.actions .btn {
+    min-height: 36px;
+}
+
+.info-box,
+.small-box {
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, .06);
+}
+
+.login-page,
+.register-page {
+    background:
+        linear-gradient(135deg, rgba(15, 23, 42, .94), rgba(23, 32, 54, .94)),
+        var(--sentinel-rail);
+}
+
+.login-box,
+.register-box {
+    width: min(420px, calc(100vw - 32px));
+}
+
+.login-logo a,
+.register-logo a {
+    color: #f8fafc;
+    font-weight: 850;
+}
+
+.login-card-body,
+.register-card-body {
+    border-radius: 8px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .28);
+}
+
+.login-card-body .btn-primary {
+    width: 100%;
+}
+
+.alert {
+    border-radius: 7px;
+}
+
+@media (max-width: 767.98px) {
+    .content-header h1 {
+        font-size: 20px;
+    }
+
+    .card {
+        border-radius: 6px;
+    }
+}
