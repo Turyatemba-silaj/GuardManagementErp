@@ -51,4 +51,6 @@ python manage.py migrate
 python manage.py setup_admin_roles --assign-active-staff
 ```
 
-For short-term Vercel testing, the app uses signed-cookie sessions on Vercel, disables the automatic `last_login` database write, and can authenticate an existing bundled user with `DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD`. Any real data changes still require a writable production database.
+For short-term Vercel testing without PostgreSQL, the app uses signed-cookie sessions, disables the automatic `last_login` write, and copies the bundled SQLite database to `/tmp/erp.sqlite3` so admin and attendance writes do not fail with `attempt to write a readonly database`.
+
+That `/tmp` SQLite fallback is not durable production storage. Vercel can replace the runtime filesystem, so real production data still requires PostgreSQL.

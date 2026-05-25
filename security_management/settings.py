@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import shutil
 import warnings
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse, unquote
@@ -18,6 +19,7 @@ from urllib.parse import parse_qsl, urlparse, unquote
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 IS_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL"))
+DATABASE_RUNTIME_NOTE = ""
 
 
 def env_bool(name, default=False):
@@ -83,6 +85,7 @@ def database_from_url(url):
 
 
 def database_config():
+    global DATABASE_RUNTIME_NOTE
     database_url = (
         os.environ.get("DATABASE_URL")
         or os.environ.get("POSTGRES_URL")
@@ -91,9 +94,34 @@ def database_config():
     )
     if database_url:
         return database_from_url(database_url)
+
+    engine = os.environ.get("DJANGO_DB_ENGINE", "django.db.backends.sqlite3")
+    configured_name = os.environ.get("DJANGO_DB_NAME")
+    if IS_VERCEL and engine == "django.db.backends.sqlite3":
+        bundled_db = BASE_DIR / "db.sqlite3"
+        writable_db = Path(os.environ.get("DJANGO_SQLITE_TMP_NAME", "/tmp/erp.sqlite3"))
+        try:
+            writable_db.parent.mkdir(parents=True, exist_ok=True)
+            if bundled_db.exists() and not writable_db.exists():
+                shutil.copy2(bundled_db, writable_db)
+            DATABASE_RUNTIME_NOTE = (
+                "Using writable /tmp SQLite fallback for Vercel. "
+                "This avoids read-only errors but is not durable production storage."
+            )
+            return {
+                "ENGINE": engine,
+                "NAME": str(writable_db),
+                "USER": "",
+                "PASSWORD": "",
+                "HOST": "",
+                "PORT": "",
+            }
+        except OSError as error:
+            warnings.warn(f"Could not prepare writable SQLite fallback: {error}", RuntimeWarning)
+
     return {
-        "ENGINE": os.environ.get("DJANGO_DB_ENGINE", "django.db.backends.sqlite3"),
-        "NAME": os.environ.get("DJANGO_DB_NAME", str(BASE_DIR / "db.sqlite3")),
+        "ENGINE": engine,
+        "NAME": configured_name or str(BASE_DIR / "db.sqlite3"),
         "USER": os.environ.get("DJANGO_DB_USER", ""),
         "PASSWORD": os.environ.get("DJANGO_DB_PASSWORD", ""),
         "HOST": os.environ.get("DJANGO_DB_HOST", ""),

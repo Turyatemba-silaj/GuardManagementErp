@@ -485,6 +485,8 @@ def json_error(message, status=400, **extra):
 def healthz(request):
     db_ok = False
     db_error = ""
+    db_writable = False
+    db_write_error = ""
     env_username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "")
     env_user_exists = False
     env_user_active = False
@@ -492,6 +494,23 @@ def healthz(request):
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
             db_ok = cursor.fetchone()[0] == 1
+            try:
+                if settings.DATABASES["default"].get("ENGINE") == "django.db.backends.sqlite3":
+                    cursor.execute(
+                        "CREATE TABLE IF NOT EXISTS core_healthcheck_write "
+                        "(id integer primary key autoincrement, checked_at text)"
+                    )
+                    cursor.execute("INSERT INTO core_healthcheck_write (checked_at) VALUES (?)", [timezone.now().isoformat()])
+                    cursor.execute(
+                        "DELETE FROM core_healthcheck_write "
+                        "WHERE id NOT IN (SELECT id FROM core_healthcheck_write ORDER BY id DESC LIMIT 5)"
+                    )
+                else:
+                    cursor.execute("CREATE TEMP TABLE core_healthcheck_write (checked_at text)")
+                    cursor.execute("INSERT INTO core_healthcheck_write (checked_at) VALUES (%s)", [timezone.now().isoformat()])
+                db_writable = True
+            except Exception as error:
+                db_write_error = str(error)
         if env_username:
             User = models.User if hasattr(models, "User") else None
             if User is None:
@@ -509,8 +528,11 @@ def healthz(request):
             "debug": settings.DEBUG,
             "database": "ok" if db_ok else "error",
             "database_error": db_error,
+            "database_writable": db_writable,
+            "database_write_error": db_write_error,
             "database_engine": settings.DATABASES["default"].get("ENGINE", ""),
             "database_name": settings.DATABASES["default"].get("NAME", ""),
+            "database_runtime_note": getattr(settings, "DATABASE_RUNTIME_NOTE", ""),
             "session_engine": getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"),
             "env_superuser_username_configured": bool(env_username),
             "env_superuser_password_configured": bool(os.environ.get("DJANGO_SUPERUSER_PASSWORD")),
