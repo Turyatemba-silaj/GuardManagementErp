@@ -2,3 +2,4 @@ Django==6.0.5
 django-jazzmin==3.0.1
 openpyxl==3.1.5
 reportlab==4.4.5
+whitenoise==6.9.0
