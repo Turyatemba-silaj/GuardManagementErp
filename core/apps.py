@@ -7,6 +7,10 @@ class CoreConfig(AppConfig):
     verbose_name = "ERP Modules"
 
     def ready(self):
+        from .db_runtime import ensure_writable_sqlite_database
+
+        ensure_writable_sqlite_database()
+
         if not getattr(settings, "DISABLE_LAST_LOGIN_UPDATE", False):
             return
         from django.contrib.auth.models import update_last_login

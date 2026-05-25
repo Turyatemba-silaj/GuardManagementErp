@@ -1,6 +1,9 @@
 from decimal import Decimal
 from io import BytesIO
 import os
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
 
 from django.contrib.auth.models import Group, User
 from django.conf import settings
@@ -49,6 +52,7 @@ from .models import (
 from .accounting import ensure_default_accounts, post_all_accounting, post_invoice, post_salary
 from .crud import MODEL_REGISTRY
 from .db_runtime import ensure_writable_sqlite_database
+import security_management.settings as project_settings
 
 
 class DatabaseRuntimeTests(TestCase):
@@ -72,6 +76,21 @@ class DatabaseRuntimeTests(TestCase):
 
         self.assertTrue(changed)
         self.assertEqual(settings.DATABASES["default"]["NAME"].replace("\\", "/"), "/tmp/erp.sqlite3")
+
+    def test_vercel_sqlite_database_url_is_switched_to_tmp(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundled_db = Path(temp_dir) / "db.sqlite3"
+            writable_db = Path(temp_dir) / "erp.sqlite3"
+            bundled_db.write_bytes(b"")
+            with (
+                patch.object(project_settings, "IS_VERCEL", True),
+                patch.object(project_settings, "BASE_DIR", Path(temp_dir)),
+                patch.dict(os.environ, {"DJANGO_SQLITE_TMP_NAME": str(writable_db)}, clear=False),
+            ):
+                config = project_settings.database_from_url(f"sqlite:///{bundled_db.as_posix()}")
+
+        self.assertEqual(config["ENGINE"], "django.db.backends.sqlite3")
+        self.assertEqual(Path(config["NAME"]), writable_db)
 
 
 class AdminRolePermissionTests(TestCase):

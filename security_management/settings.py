@@ -68,7 +68,7 @@ def database_from_url(url):
         name = unquote(parsed.path.lstrip("/")) or str(BASE_DIR / "db.sqlite3")
         if parsed.netloc:
             name = f"//{parsed.netloc}/{name}"
-        return {"ENGINE": engine, "NAME": name}
+        return sqlite_runtime_config({"ENGINE": engine, "NAME": name})
 
     options = dict(parse_qsl(parsed.query, keep_blank_values=True))
     config = {
@@ -84,6 +84,43 @@ def database_from_url(url):
     return config
 
 
+def sqlite_runtime_config(config):
+    global DATABASE_RUNTIME_NOTE
+    if not IS_VERCEL or config.get("ENGINE") != "django.db.backends.sqlite3":
+        return config
+
+    configured_name = config.get("NAME")
+    bundled_db = BASE_DIR / "db.sqlite3"
+    writable_db = Path(os.environ.get("DJANGO_SQLITE_TMP_NAME", "/tmp/erp.sqlite3"))
+    try:
+        writable_db.parent.mkdir(parents=True, exist_ok=True)
+        if configured_name:
+            configured_db = Path(configured_name)
+            if configured_db.exists():
+                bundled_db = configured_db
+        if bundled_db.exists() and not writable_db.exists():
+            shutil.copy2(bundled_db, writable_db)
+        DATABASE_RUNTIME_NOTE = (
+            "Using writable /tmp SQLite fallback for Vercel. "
+            "This avoids read-only errors but is not durable production storage. "
+            "Use DATABASE_URL or POSTGRES_URL with PostgreSQL for permanent production data."
+        )
+        updated = dict(config)
+        updated.update(
+            {
+                "NAME": str(writable_db),
+                "USER": "",
+                "PASSWORD": "",
+                "HOST": "",
+                "PORT": "",
+            }
+        )
+        return updated
+    except OSError as error:
+        warnings.warn(f"Could not prepare writable SQLite fallback: {error}", RuntimeWarning)
+        return config
+
+
 def database_config():
     global DATABASE_RUNTIME_NOTE
     database_url = (
@@ -97,40 +134,14 @@ def database_config():
 
     engine = os.environ.get("DJANGO_DB_ENGINE", "django.db.backends.sqlite3")
     configured_name = os.environ.get("DJANGO_DB_NAME")
-    if IS_VERCEL and engine == "django.db.backends.sqlite3":
-        bundled_db = BASE_DIR / "db.sqlite3"
-        writable_db = Path(os.environ.get("DJANGO_SQLITE_TMP_NAME", "/tmp/erp.sqlite3"))
-        try:
-            writable_db.parent.mkdir(parents=True, exist_ok=True)
-            if configured_name:
-                configured_db = Path(configured_name)
-                if configured_db.exists():
-                    bundled_db = configured_db
-            if bundled_db.exists() and not writable_db.exists():
-                shutil.copy2(bundled_db, writable_db)
-            DATABASE_RUNTIME_NOTE = (
-                "Using writable /tmp SQLite fallback for Vercel. "
-                "This avoids read-only errors but is not durable production storage."
-            )
-            return {
-                "ENGINE": engine,
-                "NAME": str(writable_db),
-                "USER": "",
-                "PASSWORD": "",
-                "HOST": "",
-                "PORT": "",
-            }
-        except OSError as error:
-            warnings.warn(f"Could not prepare writable SQLite fallback: {error}", RuntimeWarning)
-
-    return {
+    return sqlite_runtime_config({
         "ENGINE": engine,
         "NAME": configured_name or str(BASE_DIR / "db.sqlite3"),
         "USER": os.environ.get("DJANGO_DB_USER", ""),
         "PASSWORD": os.environ.get("DJANGO_DB_PASSWORD", ""),
         "HOST": os.environ.get("DJANGO_DB_HOST", ""),
         "PORT": os.environ.get("DJANGO_DB_PORT", ""),
-    }
+    })
 
 
 # Quick-start development settings - unsuitable for production
