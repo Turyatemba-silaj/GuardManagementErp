@@ -18,9 +18,11 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from core.auth_views import DatabaseSafeLoginView
 
 urlpatterns = [
     path('', include('core.urls')),
+    path('accounts/login/', DatabaseSafeLoginView.as_view(), name='login'),
     path('accounts/', include('django.contrib.auth.urls')),
     path('admin/', admin.site.urls),
 ]
