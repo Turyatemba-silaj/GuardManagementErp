@@ -538,10 +538,12 @@ class RosterAttendance(TimeStampedModel):
         CREATED = "created", "Created"
         UPDATED = "updated", "Updated"
         SKIPPED = "skipped", "Skipped"
+        OFF = "off", "Off"
 
     class SourceFormat(models.TextChoices):
         SIMPLE = "simple", "Simple Excel"
         SARACEN = "saracen", "Saracen Excel"
+        WIDE_MONTHLY = "wide_monthly", "Wide Monthly Excel"
 
     batch_reference = models.CharField(max_length=36, default=uuid.uuid4, db_index=True)
     file_name = models.CharField(max_length=255, blank=True)

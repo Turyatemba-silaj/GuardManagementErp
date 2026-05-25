@@ -964,8 +964,44 @@ class GuardSchedulingTests(TestCase):
         worksheet = workbook.active
         self.assertEqual(
             [cell.value for cell in worksheet[1]],
-            ["company_number", "site_code", "shift_name", "shift_date"],
+            ["site_code", "site_name", "shift", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
         )
+
+    def test_wide_monthly_roster_stores_o_as_off_attendance(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append([])
+        worksheet.append([])
+        worksheet.append(["site code", "site name", "shift", "Mon", "Tue", "Wed"])
+        worksheet.append([None, None, "D", 1, 2, 3])
+        worksheet.append(["S001", "Wide Monthly Site", "D", "O", "D", "N"])
+        content = BytesIO()
+        workbook.save(content)
+        upload = SimpleUploadedFile(
+            "DUTY ROASTER.xlsx",
+            content.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        response = self.client.post(
+            "/attendances/upload-roster/",
+            {"roster_file": upload, "roster_month": "2026-05"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        off_row = RosterAttendance.objects.get(duty_code="O")
+        self.assertEqual(off_row.import_status, RosterAttendance.ImportStatus.OFF)
+        self.assertEqual(off_row.shift_date.isoformat(), "2026-05-01")
+        self.assertEqual(off_row.site.site_code, "S001")
+        self.assertEqual(off_row.site.site_name, "Wide Monthly Site")
+        self.assertTrue(
+            RosterAttendance.objects.filter(
+                duty_code="D",
+                import_status=RosterAttendance.ImportStatus.CREATED,
+                shift_date="2026-05-02",
+            ).exists()
+        )
+        self.assertEqual(GuardSchedule.objects.filter(shift_date__range=("2026-05-01", "2026-05-03")).count(), 0)
 
     def test_guard_schedule_model_rejects_more_than_required_guards(self):
         ContractSiteRequirement.objects.filter(site=self.site).update(required_guards=1)

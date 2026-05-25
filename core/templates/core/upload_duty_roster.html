@@ -21,25 +21,34 @@
             <label for="roster_file">Excel duty roster</label>
             <input id="roster_file" name="roster_file" type="file" accept=".xlsx,.xlsm" required>
             <span class="helptext">
-                Upload either the simple template below or a Saracen site roster like Fortportal.xlsx with site, period, guard rows, and D/N/O duty codes.
+                Upload the monthly duty roster format with D/N/O duty codes, or a simple/Saracen roster.
             </span>
+        </div>
+        <div class="field">
+            <label for="roster_month">Roster month</label>
+            <input id="roster_month" name="roster_month" type="month">
+            <span class="helptext">Used when the workbook has day numbers 1-31. Leave blank to use the current month.</span>
         </div>
         <div class="table-wrap">
             <table style="min-width: 760px;">
                 <thead>
                     <tr>
-                        <th>company_number</th>
                         <th>site_code</th>
-                        <th>shift_name</th>
-                        <th>shift_date</th>
+                        <th>site_name</th>
+                        <th>shift</th>
+                        <th>Mon</th>
+                        <th>Tue</th>
+                        <th>Wed</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td>DEMO-G-001</td>
-                        <td>DC1XS0001</td>
-                        <td>Demo Morning Shift</td>
-                        <td>2026-05-16</td>
+                        <td>S001</td>
+                        <td>Main Site</td>
+                        <td>D</td>
+                        <td>O</td>
+                        <td>D</td>
+                        <td>N</td>
                     </tr>
                 </tbody>
             </table>
@@ -65,6 +74,7 @@
                     <th>Guard</th>
                     <th>Site</th>
                     <th>Shift</th>
+                    <th>Duty</th>
                     <th>Status</th>
                     <th>Source</th>
                     <th>Message</th>
@@ -77,13 +87,14 @@
                         <td>{{ row.employee|default:"-" }}</td>
                         <td>{{ row.site|default:"-" }}</td>
                         <td>{{ row.shift|default:"-" }}</td>
+                        <td>{{ row.duty_code|default:"-" }}</td>
                         <td>{{ row.get_import_status_display }}</td>
                         <td>{{ row.get_source_format_display }} row {{ row.source_row }}</td>
                         <td>{{ row.message|default:"-" }}</td>
                     </tr>
                 {% empty %}
                     <tr class="empty-row">
-                        <td colspan="7">No roster attendance imports yet.</td>
+                        <td colspan="8">No roster attendance imports yet.</td>
                     </tr>
                 {% endfor %}
             </tbody>

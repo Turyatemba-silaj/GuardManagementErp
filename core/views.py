@@ -2599,6 +2599,10 @@ def get_import_shift(shift_code):
     )[0]
 
 
+def is_off_duty_code(value):
+    return str(value or "").strip().upper() in {"O", "OFF"}
+
+
 def record_roster_attendance(
     *,
     batch_reference,
@@ -2646,6 +2650,118 @@ def roster_header_date(header, period_start, period_end):
     if period_start <= candidate <= period_end:
         return candidate
     return None
+
+
+def monthly_date_from_day(day_value, month_start):
+    try:
+        day = int(day_value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        return month_start.replace(day=day)
+    except ValueError:
+        return None
+
+
+def find_wide_monthly_roster_header(worksheet):
+    rows = list(worksheet.iter_rows(values_only=True))
+    for index, row in enumerate(rows):
+        normalized = [normalized_header(value) for value in row]
+        if {"site_code", "site_name", "shift"}.issubset(set(normalized)) and index + 1 < len(rows):
+            header_map = {header: column for column, header in enumerate(normalized) if header}
+            date_columns = []
+            for column, value in enumerate(rows[index + 1]):
+                if monthly_date_from_day(value, timezone.localdate().replace(day=1)):
+                    date_columns.append((column, value))
+            if date_columns:
+                return rows, index, header_map, date_columns
+    return rows, None, {}, []
+
+
+def import_wide_monthly_roster(worksheet, *, roster_month, file_name="", uploaded_by=None, batch_reference=None):
+    batch_reference = batch_reference or str(uuid.uuid4())
+    month_start = parse_date(f"{roster_month}-01") if roster_month else timezone.localdate().replace(day=1)
+    if not month_start:
+        month_start = timezone.localdate().replace(day=1)
+    client = get_import_client()
+    stored_rows = 0
+    off_rows = 0
+    skipped_rows = []
+    rows, header_index, headers, date_columns = find_wide_monthly_roster_header(worksheet)
+    if header_index is None:
+        return stored_rows, off_rows, skipped_rows, batch_reference
+
+    site_code_index = headers.get("site_code")
+    site_name_index = headers.get("site_name")
+    shift_index = headers.get("shift")
+    current_site = None
+    current_shift_code = ""
+
+    for row_number, row in enumerate(rows[header_index + 2 :], start=header_index + 3):
+        if not any(row):
+            continue
+        site_code = str(row[site_code_index] or "").strip() if site_code_index is not None else ""
+        site_name = str(row[site_name_index] or "").strip() if site_name_index is not None else ""
+        shift_code = str(row[shift_index] or "").strip().upper() if shift_index is not None else ""
+        if site_code or site_name:
+            lookup_name = site_name or site_code
+            current_site = models.Site.objects.filter(Q(site_code__iexact=site_code) | Q(site_name__iexact=lookup_name)).first()
+            if not current_site:
+                current_site = models.Site.objects.create(
+                    client=client,
+                    site_code=(site_code or f"IMP{row_number}")[:20],
+                    site_name=lookup_name,
+                    site_address=lookup_name,
+                    city="Imported",
+                    security_level="Imported",
+                )
+        if shift_code:
+            current_shift_code = shift_code
+        if not current_site:
+            skipped_rows.append(f"Row {row_number}: site not found")
+            continue
+
+        for column, day_value in date_columns:
+            duty_code = str(row[column] or "").strip().upper()
+            if not duty_code:
+                continue
+            shift_date = monthly_date_from_day(day_value, month_start)
+            if not shift_date:
+                skipped_rows.append(f"Row {row_number}: invalid day {day_value}")
+                continue
+            if is_off_duty_code(duty_code):
+                record_roster_attendance(
+                    batch_reference=batch_reference,
+                    file_name=file_name,
+                    source_format=models.RosterAttendance.SourceFormat.WIDE_MONTHLY,
+                    source_row=row_number,
+                    uploaded_by=uploaded_by,
+                    import_status=models.RosterAttendance.ImportStatus.OFF,
+                    message="Off duty from monthly roster.",
+                    site=current_site,
+                    shift_date=shift_date,
+                    duty_code="O",
+                )
+                off_rows += 1
+                continue
+
+            shift = get_import_shift(duty_code or current_shift_code)
+            record_roster_attendance(
+                batch_reference=batch_reference,
+                file_name=file_name,
+                source_format=models.RosterAttendance.SourceFormat.WIDE_MONTHLY,
+                source_row=row_number,
+                uploaded_by=uploaded_by,
+                import_status=models.RosterAttendance.ImportStatus.CREATED,
+                message="Stored monthly roster duty. Assign a guard from roster attendance scheduling.",
+                site=current_site,
+                shift=shift,
+                shift_date=shift_date,
+                duty_code=duty_code,
+            )
+            stored_rows += 1
+
+    return stored_rows, off_rows, skipped_rows, batch_reference
 
 
 def import_saracen_roster(worksheet, *, file_name="", uploaded_by=None, batch_reference=None):
@@ -2715,7 +2831,22 @@ def import_saracen_roster(worksheet, *, file_name="", uploaded_by=None, batch_re
         employee = get_import_guard(pers_no, guard_name, row_number=row_number, site_code=current_site.site_code)
         for column_index, shift_code in date_columns:
             code = str(row[column_index] or "").strip().upper()
-            if not code or code == "O":
+            if not code:
+                continue
+            if is_off_duty_code(code):
+                record_roster_attendance(
+                    batch_reference=batch_reference,
+                    file_name=file_name,
+                    source_format=models.RosterAttendance.SourceFormat.SARACEN,
+                    source_row=row_number,
+                    uploaded_by=uploaded_by,
+                    import_status=models.RosterAttendance.ImportStatus.OFF,
+                    message="Off duty from Saracen duty roster.",
+                    employee=employee,
+                    site=current_site,
+                    shift_date=shift_code,
+                    duty_code="O",
+                )
                 continue
             shift = get_import_shift(code)
             existing_schedule = models.GuardSchedule.objects.filter(
@@ -2795,10 +2926,12 @@ def duty_roster_template(request):
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "Duty Roster"
-    worksheet.append(["company_number", "site_code", "shift_name", "shift_date"])
-    worksheet.append(["G-001", "SITE-001", "Day", timezone.localdate().isoformat()])
-    worksheet.append(["G-002", "SITE-001", "Night", timezone.localdate().isoformat()])
-    for column in ("A", "B", "C", "D"):
+    worksheet.append(["site_code", "site_name", "shift", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+    worksheet.append(["", "", "D", 1, 2, 3, 4, 5, 6, 7])
+    worksheet.append(["S001", "Main Site", "D", "O", "D", "D", "D", "D", "D", "D"])
+    worksheet.append(["", "Main Site", "D", "D", "O", "D", "D", "D", "D", "D"])
+    worksheet.append(["", "Main Site", "N", "N", "N", "O", "N", "N", "N", "N"])
+    for column in ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J"):
         worksheet.column_dimensions[column].width = 22
     output = BytesIO()
     workbook.save(output)
@@ -2833,6 +2966,7 @@ def upload_duty_roster(request):
 
         batch_reference = str(uuid.uuid4())
         file_name = roster_file.name
+        roster_month = request.POST.get("roster_month") or timezone.localdate().strftime("%Y-%m")
         header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), [])
         headers = {normalized_header(value): index for index, value in enumerate(header_row)}
         required_groups = [
@@ -2865,6 +2999,25 @@ def upload_duty_roster(request):
                 if skipped_rows:
                     messages.error(request, "Skipped rows: " + "; ".join(skipped_rows[:8]))
                 return redirect("core:attendances")
+            wide_rows, wide_header_index, _wide_headers, _wide_date_columns = find_wide_monthly_roster_header(worksheet)
+            if wide_header_index is not None:
+                stored_rows, off_rows, skipped_rows, batch_reference = import_wide_monthly_roster(
+                    worksheet,
+                    roster_month=roster_month,
+                    file_name=file_name,
+                    uploaded_by=request.user,
+                    batch_reference=batch_reference,
+                )
+                if stored_rows or off_rows:
+                    messages.success(
+                        request,
+                        f"Monthly roster imported: {stored_rows} duty rows stored, {off_rows} off rows marked O. Batch: {batch_reference}",
+                    )
+                else:
+                    messages.error(request, "No monthly roster rows were imported from this workbook.")
+                if skipped_rows:
+                    messages.error(request, "Skipped rows: " + "; ".join(skipped_rows[:8]))
+                return redirect("core:upload_duty_roster")
             else:
                 messages.error(
                     request,

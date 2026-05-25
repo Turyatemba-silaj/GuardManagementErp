@@ -62,7 +62,7 @@ MODEL_REGISTRY = {
         models.RosterAttendance,
         "Roster Attendances",
         "Operations",
-        ("shift_date", "employee", "site", "shift", "import_status", "source_format", "source_row", "message"),
+        ("shift_date", "employee", "site", "shift", "duty_code", "import_status", "source_format", "source_row", "message"),
     ),
     "incidents": ModelConfig(models.Incident, "Incidents", "Operations", ("incident_type", "deployment", "employee", "incident_date", "severity_level", "status")),
     "patrol-logs": ModelConfig(models.PatrolLog, "Patrol Logs", "Operations", ("employee", "site", "patrol_time", "patrol_route")),

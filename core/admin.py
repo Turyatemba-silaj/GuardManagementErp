@@ -217,6 +217,7 @@ class RosterAttendanceAdmin(admin.ModelAdmin):
         "site",
         "shift",
         "import_status",
+        "duty_code",
         "source_format",
         "source_row",
         "file_name",
