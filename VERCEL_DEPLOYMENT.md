@@ -39,14 +39,16 @@ If a `DisallowedHost` page still shows:
 This project currently defaults to SQLite. SQLite inside a Vercel deployment is not a reliable production database because serverless deployments have an immutable/ephemeral filesystem. Use PostgreSQL for production and configure:
 
 ```text
-DJANGO_DB_ENGINE=django.db.backends.postgresql
-DJANGO_DB_NAME=<database>
-DJANGO_DB_USER=<user>
-DJANGO_DB_PASSWORD=<password>
-DJANGO_DB_HOST=<host>
-DJANGO_DB_PORT=5432
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<database>?sslmode=require
 ```
 
-If PostgreSQL is used, add the required database driver to `requirements.txt`.
+The settings also understand `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, or the separate `DJANGO_DB_ENGINE`, `DJANGO_DB_NAME`, `DJANGO_DB_USER`, `DJANGO_DB_PASSWORD`, `DJANGO_DB_HOST`, and `DJANGO_DB_PORT` variables.
+
+After setting the PostgreSQL URL, run migrations against that database:
+
+```text
+python manage.py migrate
+python manage.py setup_admin_roles --assign-active-staff
+```
 
 For short-term Vercel testing, the app uses signed-cookie sessions on Vercel, disables the automatic `last_login` database write, and can authenticate an existing bundled user with `DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD`. Any real data changes still require a writable production database.

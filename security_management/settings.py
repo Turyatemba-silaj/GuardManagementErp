@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 import warnings
 from pathlib import Path
+from urllib.parse import parse_qsl, urlparse, unquote
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -49,6 +50,55 @@ def https_origins(hosts):
         for host in hosts
         if host and not host.startswith(".") and host not in {"127.0.0.1", "localhost", "testserver"}
     ]
+
+
+def database_from_url(url):
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    if scheme in {"postgres", "postgresql"}:
+        engine = "django.db.backends.postgresql"
+    elif scheme == "sqlite":
+        engine = "django.db.backends.sqlite3"
+    else:
+        raise ValueError(f"Unsupported database URL scheme: {parsed.scheme}")
+
+    if engine == "django.db.backends.sqlite3":
+        name = unquote(parsed.path.lstrip("/")) or str(BASE_DIR / "db.sqlite3")
+        if parsed.netloc:
+            name = f"//{parsed.netloc}/{name}"
+        return {"ENGINE": engine, "NAME": name}
+
+    options = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    config = {
+        "ENGINE": engine,
+        "NAME": unquote(parsed.path.lstrip("/")),
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or ""),
+    }
+    if options:
+        config["OPTIONS"] = options
+    return config
+
+
+def database_config():
+    database_url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("POSTGRES_URL")
+        or os.environ.get("POSTGRES_URL_NON_POOLING")
+        or os.environ.get("POSTGRES_PRISMA_URL")
+    )
+    if database_url:
+        return database_from_url(database_url)
+    return {
+        "ENGINE": os.environ.get("DJANGO_DB_ENGINE", "django.db.backends.sqlite3"),
+        "NAME": os.environ.get("DJANGO_DB_NAME", str(BASE_DIR / "db.sqlite3")),
+        "USER": os.environ.get("DJANGO_DB_USER", ""),
+        "PASSWORD": os.environ.get("DJANGO_DB_PASSWORD", ""),
+        "HOST": os.environ.get("DJANGO_DB_HOST", ""),
+        "PORT": os.environ.get("DJANGO_DB_PORT", ""),
+    }
 
 
 # Quick-start development settings - unsuitable for production
@@ -123,16 +173,7 @@ WSGI_APPLICATION = 'security_management.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": os.environ.get("DJANGO_DB_ENGINE", "django.db.backends.sqlite3"),
-        "NAME": os.environ.get("DJANGO_DB_NAME", str(BASE_DIR / "db.sqlite3")),
-        "USER": os.environ.get("DJANGO_DB_USER", ""),
-        "PASSWORD": os.environ.get("DJANGO_DB_PASSWORD", ""),
-        "HOST": os.environ.get("DJANGO_DB_HOST", ""),
-        "PORT": os.environ.get("DJANGO_DB_PORT", ""),
-    }
-}
+DATABASES = {"default": database_config()}
 
 
 # Password validation
