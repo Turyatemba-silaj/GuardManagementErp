@@ -647,6 +647,8 @@ class RecruitmentRequisition(TimeStampedModel):
 
     class Meta:
         ordering = ["-opening_date", "requisition_number"]
+        verbose_name = "Recruitment requisition"
+        verbose_name_plural = "Recruitment requisitions"
 
     @property
     def applications_count(self):
@@ -708,6 +710,8 @@ class RecruitmentApplication(TimeStampedModel):
 
     class Meta:
         ordering = ["-date_received", "last_name", "first_name"]
+        verbose_name = "Recruitment application"
+        verbose_name_plural = "Recruitment applications"
 
     @property
     def full_name(self):
@@ -749,6 +753,8 @@ class RecruitmentInterview(TimeStampedModel):
 
     class Meta:
         ordering = ["-scheduled_at", "application"]
+        verbose_name = "Recruitment interview"
+        verbose_name_plural = "Recruitment interviews"
 
     def __str__(self):
         return f"{self.application.full_name} - {self.get_interview_type_display()}"
@@ -775,6 +781,8 @@ class JobOffer(TimeStampedModel):
 
     class Meta:
         ordering = ["-offer_date", "application"]
+        verbose_name = "Job offer"
+        verbose_name_plural = "Job offers"
 
     def __str__(self):
         return f"Offer to {self.application.full_name}"
@@ -917,6 +925,8 @@ class Leave(TimeStampedModel):
 
     class Meta:
         ordering = ["-start_date"]
+        verbose_name = "Leave request"
+        verbose_name_plural = "Leave requests"
 
     def __str__(self):
         return f"{self.employee} - {self.leave_type}"
@@ -939,6 +949,8 @@ class DisciplinaryAction(TimeStampedModel):
 
     class Meta:
         ordering = ["-action_date"]
+        verbose_name = "Disciplinary action"
+        verbose_name_plural = "Disciplinary actions"
 
     def __str__(self):
         return f"{self.action_type} - {self.employee}"
@@ -955,6 +967,8 @@ class PerformanceEvaluation(TimeStampedModel):
 
     class Meta:
         ordering = ["-eval_date"]
+        verbose_name = "Performance evaluation"
+        verbose_name_plural = "Performance evaluations"
 
     def __str__(self):
         return f"{self.employee} rating {self.rating}/5"
@@ -969,6 +983,8 @@ class Document(TimeStampedModel):
 
     class Meta:
         ordering = ["employee", "doc_type"]
+        verbose_name = "Employee document"
+        verbose_name_plural = "Employee documents"
 
     def __str__(self):
         return f"{self.doc_type} - {self.employee}"
@@ -1000,6 +1016,8 @@ class Salary(TimeStampedModel):
 
     class Meta:
         ordering = ["-pay_period_start", "employee"]
+        verbose_name = "Salary"
+        verbose_name_plural = "Salaries"
 
     def save(self, *args, **kwargs):
         self.gross_pay = self.basic_salary + self.allowances + self.overtime_pay + self.bonus
@@ -1316,6 +1334,8 @@ class JournalEntry(TimeStampedModel):
 
     class Meta:
         ordering = ["-entry_date", "reference"]
+        verbose_name = "Journal entry"
+        verbose_name_plural = "Journal entries"
 
     @property
     def total_debit(self):
@@ -1342,6 +1362,8 @@ class JournalLine(TimeStampedModel):
 
     class Meta:
         ordering = ["journal_entry__entry_date", "journal_entry__reference", "id"]
+        verbose_name = "Journal line"
+        verbose_name_plural = "Journal lines"
 
     def clean(self):
         super().clean()

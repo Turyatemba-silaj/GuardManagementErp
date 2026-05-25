@@ -4,6 +4,7 @@ from django.conf import settings
 
 class CoreConfig(AppConfig):
     name = 'core'
+    verbose_name = "ERP Modules"
 
     def ready(self):
         if not getattr(settings, "DISABLE_LAST_LOGIN_UPDATE", False):
