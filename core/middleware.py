@@ -4,12 +4,15 @@ from django.db import DatabaseError, OperationalError
 from django.http import HttpResponse
 from django.http import JsonResponse
 
+from .db_runtime import ensure_writable_sqlite_database
+
 
 class DatabaseErrorMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
+        ensure_writable_sqlite_database()
         return self.get_response(request)
 
     def process_exception(self, request, exception):

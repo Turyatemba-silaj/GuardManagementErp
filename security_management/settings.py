@@ -102,6 +102,10 @@ def database_config():
         writable_db = Path(os.environ.get("DJANGO_SQLITE_TMP_NAME", "/tmp/erp.sqlite3"))
         try:
             writable_db.parent.mkdir(parents=True, exist_ok=True)
+            if configured_name:
+                configured_db = Path(configured_name)
+                if configured_db.exists():
+                    bundled_db = configured_db
             if bundled_db.exists() and not writable_db.exists():
                 shutil.copy2(bundled_db, writable_db)
             DATABASE_RUNTIME_NOTE = (

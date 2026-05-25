@@ -1,10 +1,12 @@
 from decimal import Decimal
 from io import BytesIO
+import os
 
 from django.contrib.auth.models import Group, User
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError
+from django.db import IntegrityError, connections
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -45,6 +47,30 @@ from .models import (
 )
 from .accounting import ensure_default_accounts, post_all_accounting, post_invoice, post_salary
 from .crud import MODEL_REGISTRY
+from .db_runtime import ensure_writable_sqlite_database
+
+
+class DatabaseRuntimeTests(TestCase):
+    @override_settings(
+        DATABASES={
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": "/var/task/db.sqlite3",
+            }
+        }
+    )
+    def test_vercel_sqlite_path_is_switched_to_tmp(self):
+        with override_settings(BASE_DIR="/var/task"):
+            with self.settings():
+                os.environ["VERCEL"] = "1"
+                try:
+                    changed = ensure_writable_sqlite_database()
+                finally:
+                    os.environ.pop("VERCEL", None)
+                    connections["default"].close()
+
+        self.assertTrue(changed)
+        self.assertEqual(settings.DATABASES["default"]["NAME"].replace("\\", "/"), "/tmp/erp.sqlite3")
 
 
 class AdminRolePermissionTests(TestCase):
