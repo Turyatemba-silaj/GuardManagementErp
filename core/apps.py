@@ -12,3 +12,4 @@ class CoreConfig(AppConfig):
         from django.contrib.auth.signals import user_logged_in
 
         user_logged_in.disconnect(update_last_login)
+        user_logged_in.disconnect(dispatch_uid="update_last_login")
