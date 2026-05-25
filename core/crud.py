@@ -23,7 +23,7 @@ MODEL_REGISTRY = {
             "site",
             "shift",
             "required_guards",
-            "rate_per_guard",
+            "billing_rate",
             "gun_count",
             "radio_count",
             "metal_detector_count",

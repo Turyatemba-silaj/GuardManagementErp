@@ -205,6 +205,10 @@ class ContractSiteRequirement(TimeStampedModel):
         return self.rate_per_guard or self.contract.billing_rate
 
     @property
+    def billing_rate(self):
+        return self.effective_guard_rate
+
+    @property
     def billable_total(self):
         return (
             (Decimal(self.required_guards) * self.effective_guard_rate)
@@ -214,6 +218,11 @@ class ContractSiteRequirement(TimeStampedModel):
             + (Decimal(self.walk_through_machine_count) * self.walk_through_machine_rate)
             + (Decimal(self.dog_count) * self.dog_rate)
         ).quantize(Decimal("0.01"))
+
+    def save(self, *args, **kwargs):
+        if not self.rate_per_guard and self.contract_id:
+            self.rate_per_guard = self.contract.billing_rate
+        super().save(*args, **kwargs)
 
 
 class Role(TimeStampedModel):

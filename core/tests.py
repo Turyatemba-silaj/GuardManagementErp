@@ -381,6 +381,62 @@ class FinanceCalculationTests(TestCase):
         self.assertEqual(invoice.guard_count, 4)
         self.assertEqual(invoice.subtotal_amount, Decimal("320000.00"))
 
+    def test_contract_requirement_defaults_guard_rate_from_contract(self):
+        client = Client.objects.create(
+            client_name="Requirement Rate Client",
+            contact_person="Rose",
+            phone_number="0711111123",
+            contract_start_date="2026-01-01",
+        )
+        site = Site.objects.create(client=client, site_name="Rate Site", site_address="Plot R", city="Kampala")
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="RATE-001",
+            start_date="2026-01-01",
+            billing_rate=Decimal("175000.00"),
+            status=StatusChoices.ACTIVE,
+        )
+
+        requirement = ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=site,
+            required_guards=2,
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+
+        self.assertEqual(requirement.rate_per_guard, Decimal("175000.00"))
+        self.assertEqual(requirement.billing_rate, Decimal("175000.00"))
+        self.assertEqual(requirement.billable_total, Decimal("350000.00"))
+
+    def test_contract_requirement_can_override_guard_rate(self):
+        client = Client.objects.create(
+            client_name="Override Rate Client",
+            contact_person="Rose",
+            phone_number="0711111124",
+            contract_start_date="2026-01-01",
+        )
+        site = Site.objects.create(client=client, site_name="Override Site", site_address="Plot O", city="Kampala")
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="RATE-002",
+            start_date="2026-01-01",
+            billing_rate=Decimal("175000.00"),
+            status=StatusChoices.ACTIVE,
+        )
+
+        requirement = ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=site,
+            required_guards=2,
+            rate_per_guard=Decimal("200000.00"),
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+
+        self.assertEqual(requirement.billing_rate, Decimal("200000.00"))
+        self.assertEqual(requirement.billable_total, Decimal("400000.00"))
+
     def test_contract_invoice_data_returns_client_and_sites(self):
         client = Client.objects.create(
             client_name="Endpoint Client",
