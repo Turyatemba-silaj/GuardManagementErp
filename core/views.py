@@ -3,6 +3,7 @@ from collections import defaultdict
 from decimal import Decimal
 from io import BytesIO
 import json
+import os
 import re
 
 from django.conf import settings
@@ -482,10 +483,22 @@ def json_error(message, status=400, **extra):
 def healthz(request):
     db_ok = False
     db_error = ""
+    env_username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "")
+    env_user_exists = False
+    env_user_active = False
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
             db_ok = cursor.fetchone()[0] == 1
+        if env_username:
+            User = models.User if hasattr(models, "User") else None
+            if User is None:
+                from django.contrib.auth import get_user_model
+
+                User = get_user_model()
+            env_user = User.objects.filter(username=env_username).only("is_active").first()
+            env_user_exists = env_user is not None
+            env_user_active = bool(env_user and env_user.is_active)
     except Exception as error:
         db_error = str(error)
     return JsonResponse(
@@ -497,6 +510,11 @@ def healthz(request):
             "database_engine": settings.DATABASES["default"].get("ENGINE", ""),
             "database_name": settings.DATABASES["default"].get("NAME", ""),
             "session_engine": getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"),
+            "env_superuser_username_configured": bool(env_username),
+            "env_superuser_password_configured": bool(os.environ.get("DJANGO_SUPERUSER_PASSWORD")),
+            "env_superuser_username": env_username,
+            "env_superuser_user_exists": env_user_exists,
+            "env_superuser_user_active": env_user_active,
             "allowed_hosts": settings.ALLOWED_HOSTS,
         },
         status=200 if db_ok else 503,
