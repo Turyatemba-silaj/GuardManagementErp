@@ -10,7 +10,10 @@
             <h1>Upload Duty Roster</h1>
             <p class="muted">Import Excel rows into guard schedules.</p>
         </div>
-        <a class="btn btn-light" href="{% url 'core:attendances' %}">Back to Attendances</a>
+        <div class="actions">
+            <a class="btn btn-success" href="{% url 'core:duty_roster_template' %}">Download Template</a>
+            <a class="btn btn-light" href="{% url 'core:attendances' %}">Back to Attendances</a>
+        </div>
     </div>
     <form class="form-card" method="post" enctype="multipart/form-data" style="grid-template-columns: 1fr;">
         {% csrf_token %}
@@ -45,5 +48,46 @@
             <button class="btn btn-success" type="submit">Upload Roster</button>
         </div>
     </form>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h2>Recent Roster Attendance Imports</h2>
+            <p class="muted">Imported rows are stored here and linked to guard schedules.</p>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Guard</th>
+                    <th>Site</th>
+                    <th>Shift</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in recent_roster_rows %}
+                    <tr>
+                        <td>{{ row.shift_date|default:"-" }}</td>
+                        <td>{{ row.employee|default:"-" }}</td>
+                        <td>{{ row.site|default:"-" }}</td>
+                        <td>{{ row.shift|default:"-" }}</td>
+                        <td>{{ row.get_import_status_display }}</td>
+                        <td>{{ row.get_source_format_display }} row {{ row.source_row }}</td>
+                        <td>{{ row.message|default:"-" }}</td>
+                    </tr>
+                {% empty %}
+                    <tr class="empty-row">
+                        <td colspan="7">No roster attendance imports yet.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 {% endblock %}

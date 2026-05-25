@@ -6,6 +6,7 @@ GUARD_GROUP = "Guard"
 
 SUPERVISOR_ALLOWED_SLUGS = {
     "guard-schedules",
+    "roster-attendances",
     "attendance-records",
     "assets",
     "zones",

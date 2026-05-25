@@ -36,6 +36,7 @@ from .models import (
     RecruitmentInterview,
     RecruitmentRequisition,
     Role,
+    RosterAttendance,
     Salary,
     Shift,
     Site,
@@ -916,6 +917,10 @@ class GuardSchedulingTests(TestCase):
                 shift_date="2026-05-20",
             ).exists()
         )
+        roster_row = RosterAttendance.objects.get(shift_date="2026-05-20")
+        self.assertEqual(roster_row.employee, self.guard)
+        self.assertEqual(roster_row.import_status, RosterAttendance.ImportStatus.CREATED)
+        self.assertIsNotNone(roster_row.schedule)
 
     def test_excel_duty_roster_does_not_exceed_contract_requirement(self):
         ContractSiteRequirement.objects.filter(site=self.site).update(required_guards=1)
@@ -938,6 +943,28 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(
             GuardSchedule.objects.filter(site=self.site, shift=self.shift, shift_date="2026-05-21").count(),
             1,
+        )
+        self.assertEqual(RosterAttendance.objects.filter(shift_date="2026-05-21").count(), 2)
+        self.assertTrue(
+            RosterAttendance.objects.filter(
+                shift_date="2026-05-21",
+                import_status=RosterAttendance.ImportStatus.SKIPPED,
+            ).exists()
+        )
+
+    def test_duty_roster_template_downloads_excel_workbook(self):
+        response = self.client.get("/attendances/roster-template/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        workbook = load_workbook(BytesIO(response.content))
+        worksheet = workbook.active
+        self.assertEqual(
+            [cell.value for cell in worksheet[1]],
+            ["company_number", "site_code", "shift_name", "shift_date"],
         )
 
     def test_guard_schedule_model_rejects_more_than_required_guards(self):

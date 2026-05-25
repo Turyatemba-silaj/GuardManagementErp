@@ -1,4 +1,5 @@
 import re
+import uuid
 from decimal import Decimal
 from math import atan2, cos, radians, sin, sqrt
 
@@ -530,6 +531,39 @@ class GuardSchedule(TimeStampedModel):
         if self._state.adding:
             self.full_clean()
         super().save(*args, **kwargs)
+
+
+class RosterAttendance(TimeStampedModel):
+    class ImportStatus(models.TextChoices):
+        CREATED = "created", "Created"
+        UPDATED = "updated", "Updated"
+        SKIPPED = "skipped", "Skipped"
+
+    class SourceFormat(models.TextChoices):
+        SIMPLE = "simple", "Simple Excel"
+        SARACEN = "saracen", "Saracen Excel"
+
+    batch_reference = models.CharField(max_length=36, default=uuid.uuid4, db_index=True)
+    file_name = models.CharField(max_length=255, blank=True)
+    source_format = models.CharField(max_length=20, choices=SourceFormat.choices, default=SourceFormat.SIMPLE)
+    source_row = models.PositiveIntegerField(default=0)
+    employee = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name="roster_attendances")
+    site = models.ForeignKey(Site, on_delete=models.SET_NULL, null=True, blank=True, related_name="roster_attendances")
+    shift = models.ForeignKey(Shift, on_delete=models.SET_NULL, null=True, blank=True, related_name="roster_attendances")
+    shift_date = models.DateField(null=True, blank=True)
+    schedule = models.ForeignKey(GuardSchedule, on_delete=models.SET_NULL, null=True, blank=True, related_name="roster_attendances")
+    duty_code = models.CharField(max_length=40, blank=True)
+    import_status = models.CharField(max_length=20, choices=ImportStatus.choices, default=ImportStatus.CREATED)
+    message = models.TextField(blank=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="roster_upload_rows")
+
+    class Meta:
+        ordering = ["-created_at", "shift_date", "site__site_name", "employee__first_name"]
+        verbose_name = "Roster attendance"
+        verbose_name_plural = "Roster attendances"
+
+    def __str__(self):
+        return f"{self.shift_date or 'No date'} - {self.employee or 'Unknown guard'} - {self.get_import_status_display()}"
 
 
 class Incident(TimeStampedModel):

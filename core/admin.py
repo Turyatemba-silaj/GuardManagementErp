@@ -209,6 +209,33 @@ class GuardScheduleAdmin(admin.ModelAdmin):
     date_hierarchy = "shift_date"
 
 
+@admin.register(models.RosterAttendance)
+class RosterAttendanceAdmin(admin.ModelAdmin):
+    list_display = (
+        "shift_date",
+        "employee",
+        "site",
+        "shift",
+        "import_status",
+        "source_format",
+        "source_row",
+        "file_name",
+    )
+    list_filter = ("import_status", "source_format", "shift_date", "site", "shift")
+    search_fields = (
+        "batch_reference",
+        "file_name",
+        "employee__company_number",
+        "employee__first_name",
+        "employee__last_name",
+        "site__site_code",
+        "site__site_name",
+        "message",
+    )
+    readonly_fields = ("created_at", "updated_at")
+    date_hierarchy = "shift_date"
+
+
 @admin.register(models.Incident)
 class IncidentAdmin(admin.ModelAdmin):
     list_display = ("incident_type", "deployment", "employee", "incident_date", "severity_level", "status")

@@ -5,6 +5,7 @@ from io import BytesIO
 import json
 import os
 import re
+import uuid
 
 from django.conf import settings
 from django.contrib import messages
@@ -2598,6 +2599,39 @@ def get_import_shift(shift_code):
     )[0]
 
 
+def record_roster_attendance(
+    *,
+    batch_reference,
+    file_name,
+    source_format,
+    source_row,
+    uploaded_by,
+    import_status,
+    message="",
+    employee=None,
+    site=None,
+    shift=None,
+    shift_date=None,
+    schedule=None,
+    duty_code="",
+):
+    return models.RosterAttendance.objects.create(
+        batch_reference=batch_reference,
+        file_name=file_name,
+        source_format=source_format,
+        source_row=source_row,
+        employee=employee,
+        site=site,
+        shift=shift,
+        shift_date=shift_date,
+        schedule=schedule,
+        duty_code=str(duty_code or "")[:40],
+        import_status=import_status,
+        message=message,
+        uploaded_by=uploaded_by if getattr(uploaded_by, "is_authenticated", False) else None,
+    )
+
+
 def roster_header_date(header, period_start, period_end):
     match = re.search(r"/(\d{1,2})$", str(header or "").strip())
     if not match:
@@ -2614,8 +2648,9 @@ def roster_header_date(header, period_start, period_end):
     return None
 
 
-def import_saracen_roster(worksheet):
+def import_saracen_roster(worksheet, *, file_name="", uploaded_by=None, batch_reference=None):
     client = get_import_client()
+    batch_reference = batch_reference or str(uuid.uuid4())
     created_schedules = 0
     updated_schedules = 0
     skipped_rows = []
@@ -2690,7 +2725,22 @@ def import_saracen_roster(worksheet):
                 shift_date=shift_code,
             ).first()
             if not existing_schedule and contract_schedule_limit_reached(current_site, shift, shift_code):
-                skipped_rows.append(f"Row {row_number}: {contract_limit_message(current_site, shift, shift_code)}")
+                message = contract_limit_message(current_site, shift, shift_code)
+                skipped_rows.append(f"Row {row_number}: {message}")
+                record_roster_attendance(
+                    batch_reference=batch_reference,
+                    file_name=file_name,
+                    source_format=models.RosterAttendance.SourceFormat.SARACEN,
+                    source_row=row_number,
+                    uploaded_by=uploaded_by,
+                    import_status=models.RosterAttendance.ImportStatus.SKIPPED,
+                    message=message,
+                    employee=employee,
+                    site=current_site,
+                    shift=shift,
+                    shift_date=shift_code,
+                    duty_code=code,
+                )
                 continue
             deployment, _created = models.Deployment.objects.update_or_create(
                 employee=employee,
@@ -2703,7 +2753,7 @@ def import_saracen_roster(worksheet):
                     "status": models.StatusChoices.ACTIVE,
                 },
             )
-            _schedule, created = models.GuardSchedule.objects.update_or_create(
+            schedule, created = models.GuardSchedule.objects.update_or_create(
                 deployment=deployment,
                 shift_date=shift_code,
                 defaults={
@@ -2716,10 +2766,49 @@ def import_saracen_roster(worksheet):
             )
             if created:
                 created_schedules += 1
+                import_status = models.RosterAttendance.ImportStatus.CREATED
             else:
                 updated_schedules += 1
+                import_status = models.RosterAttendance.ImportStatus.UPDATED
+            record_roster_attendance(
+                batch_reference=batch_reference,
+                file_name=file_name,
+                source_format=models.RosterAttendance.SourceFormat.SARACEN,
+                source_row=row_number,
+                uploaded_by=uploaded_by,
+                import_status=import_status,
+                message="Imported from Saracen duty roster.",
+                employee=employee,
+                site=current_site,
+                shift=shift,
+                shift_date=shift_code,
+                schedule=schedule,
+                duty_code=code,
+            )
 
-    return created_schedules, updated_schedules, skipped_rows
+    return created_schedules, updated_schedules, skipped_rows, batch_reference
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def duty_roster_template(request):
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Duty Roster"
+    worksheet.append(["company_number", "site_code", "shift_name", "shift_date"])
+    worksheet.append(["G-001", "SITE-001", "Day", timezone.localdate().isoformat()])
+    worksheet.append(["G-002", "SITE-001", "Night", timezone.localdate().isoformat()])
+    for column in ("A", "B", "C", "D"):
+        worksheet.column_dimensions[column].width = 22
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="duty-roster-template.xlsx"'
+    return response
 
 
 @login_required
@@ -2742,6 +2831,8 @@ def upload_duty_roster(request):
             messages.error(request, "The uploaded file could not be read as an Excel workbook.")
             return redirect("core:upload_duty_roster")
 
+        batch_reference = str(uuid.uuid4())
+        file_name = roster_file.name
         header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), [])
         headers = {normalized_header(value): index for index, value in enumerate(header_row)}
         required_groups = [
@@ -2758,11 +2849,16 @@ def upload_duty_roster(request):
                 if row
             )
             if has_saracen_blocks:
-                created_schedules, updated_schedules, skipped_rows = import_saracen_roster(worksheet)
+                created_schedules, updated_schedules, skipped_rows, batch_reference = import_saracen_roster(
+                    worksheet,
+                    file_name=file_name,
+                    uploaded_by=request.user,
+                    batch_reference=batch_reference,
+                )
                 if created_schedules or updated_schedules:
                     messages.success(
                         request,
-                        f"Duty roster imported: {created_schedules} schedules created, {updated_schedules} updated.",
+                        f"Duty roster imported: {created_schedules} schedules created, {updated_schedules} updated. Batch: {batch_reference}",
                     )
                 else:
                     messages.error(request, "No duty schedules were imported from this workbook.")
@@ -2801,7 +2897,18 @@ def upload_duty_roster(request):
             if not shift_date and hasattr(row[headers.get("shift_date", headers.get("date", headers.get("duty_date")))], "date"):
                 shift_date = row[headers.get("shift_date", headers.get("date", headers.get("duty_date")))].date()
             if not shift_date:
-                skipped_rows.append(f"Row {row_number}: invalid date")
+                message = "invalid date"
+                skipped_rows.append(f"Row {row_number}: {message}")
+                record_roster_attendance(
+                    batch_reference=batch_reference,
+                    file_name=file_name,
+                    source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                    source_row=row_number,
+                    uploaded_by=request.user,
+                    import_status=models.RosterAttendance.ImportStatus.SKIPPED,
+                    message=message,
+                    duty_code=shift_value,
+                )
                 continue
 
             employee = models.Employee.objects.filter(
@@ -2816,11 +2923,25 @@ def upload_duty_roster(request):
             shift = models.Shift.objects.filter(Q(shift_name__iexact=shift_value) | Q(code__iexact=shift_value)).first()
 
             if not employee or not site or not shift:
-                skipped_rows.append(
-                    f"Row {row_number}: "
+                message = (
                     f"{'guard not found' if not employee else ''} "
                     f"{'site not found' if not site else ''} "
                     f"{'shift not found' if not shift else ''}".strip()
+                )
+                skipped_rows.append(f"Row {row_number}: {message}")
+                record_roster_attendance(
+                    batch_reference=batch_reference,
+                    file_name=file_name,
+                    source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                    source_row=row_number,
+                    uploaded_by=request.user,
+                    import_status=models.RosterAttendance.ImportStatus.SKIPPED,
+                    message=message,
+                    employee=employee,
+                    site=site,
+                    shift=shift,
+                    shift_date=shift_date,
+                    duty_code=shift_value,
                 )
                 continue
 
@@ -2832,7 +2953,22 @@ def upload_duty_roster(request):
                 shift_date=shift_date,
             ).first()
             if not existing_schedule and contract_schedule_limit_reached(site, shift, shift_date):
-                skipped_rows.append(f"Row {row_number}: {contract_limit_message(site, shift, shift_date)}")
+                message = contract_limit_message(site, shift, shift_date)
+                skipped_rows.append(f"Row {row_number}: {message}")
+                record_roster_attendance(
+                    batch_reference=batch_reference,
+                    file_name=file_name,
+                    source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                    source_row=row_number,
+                    uploaded_by=request.user,
+                    import_status=models.RosterAttendance.ImportStatus.SKIPPED,
+                    message=message,
+                    employee=employee,
+                    site=site,
+                    shift=shift,
+                    shift_date=shift_date,
+                    duty_code=shift_value,
+                )
                 continue
 
             supervisor = models.ZoneSiteAllocation.objects.filter(
@@ -2865,19 +3001,37 @@ def upload_duty_roster(request):
             )
             if created:
                 created_schedules += 1
+                import_status = models.RosterAttendance.ImportStatus.CREATED
             else:
                 updated_schedules += 1
+                import_status = models.RosterAttendance.ImportStatus.UPDATED
+            record_roster_attendance(
+                batch_reference=batch_reference,
+                file_name=file_name,
+                source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                source_row=row_number,
+                uploaded_by=request.user,
+                import_status=import_status,
+                message="Imported from Excel duty roster.",
+                employee=employee,
+                site=site,
+                shift=shift,
+                shift_date=shift_date,
+                schedule=schedule,
+                duty_code=shift_value,
+            )
 
         if created_schedules or updated_schedules:
             messages.success(
                 request,
-                f"Duty roster imported: {created_schedules} schedules created, {updated_schedules} updated.",
+                f"Duty roster imported: {created_schedules} schedules created, {updated_schedules} updated. Batch: {batch_reference}",
             )
         if skipped_rows:
             messages.error(request, "Skipped rows: " + "; ".join(skipped_rows[:8]))
         return redirect("core:attendances")
 
-    return render(request, "core/upload_duty_roster.html")
+    recent_roster_rows = models.RosterAttendance.objects.select_related("employee", "site", "shift", "schedule").order_by("-created_at")[:20]
+    return render(request, "core/upload_duty_roster.html", {"recent_roster_rows": recent_roster_rows})
 
 
 @login_required

@@ -58,6 +58,12 @@ MODEL_REGISTRY = {
         ("employee_number", "employee", "client", "site", "shift", "start_date", "status"),
     ),
     "guard-schedules": ModelConfig(models.GuardSchedule, "Guard Schedules", "Operations", ("employee", "replacement_employee", "site", "shift", "shift_date", "status")),
+    "roster-attendances": ModelConfig(
+        models.RosterAttendance,
+        "Roster Attendances",
+        "Operations",
+        ("shift_date", "employee", "site", "shift", "import_status", "source_format", "source_row", "message"),
+    ),
     "incidents": ModelConfig(models.Incident, "Incidents", "Operations", ("incident_type", "deployment", "employee", "incident_date", "severity_level", "status")),
     "patrol-logs": ModelConfig(models.PatrolLog, "Patrol Logs", "Operations", ("employee", "site", "patrol_time", "patrol_route")),
     "assets": ModelConfig(models.Asset, "Assets", "Operations", ("asset_name", "asset_type", "serial_number", "quantity", "condition", "assigned_to")),
