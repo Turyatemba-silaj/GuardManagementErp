@@ -494,6 +494,8 @@ def healthz(request):
             "debug": settings.DEBUG,
             "database": "ok" if db_ok else "error",
             "database_error": db_error,
+            "database_engine": settings.DATABASES["default"].get("ENGINE", ""),
+            "database_name": settings.DATABASES["default"].get("NAME", ""),
             "session_engine": getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"),
             "allowed_hosts": settings.ALLOWED_HOSTS,
         },
