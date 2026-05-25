@@ -3,6 +3,7 @@ from decimal import Decimal
 from math import atan2, cos, radians, sin, sqrt
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
@@ -477,6 +478,58 @@ class GuardSchedule(TimeStampedModel):
 
     def __str__(self):
         return f"{self.employee} - {self.site} - {self.shift_date}"
+
+    def required_guard_limit(self):
+        if not self.site_id or not self.shift_id or not self.shift_date:
+            return None
+        requirement = (
+            ContractSiteRequirement.objects.select_related("contract")
+            .filter(
+                site_id=self.site_id,
+                status=StatusChoices.ACTIVE,
+                contract__status=StatusChoices.ACTIVE,
+                start_date__lte=self.shift_date,
+            )
+            .filter(Q(end_date__gte=self.shift_date) | Q(end_date__isnull=True))
+            .filter(Q(contract__end_date__gte=self.shift_date) | Q(contract__end_date__isnull=True))
+            .filter(Q(shift_id=self.shift_id) | Q(shift__isnull=True))
+            .order_by("-shift_id", "-start_date")
+            .first()
+        )
+        if requirement:
+            return requirement.required_guards
+        if self.site_id:
+            return self.site.required_guards_per_shift
+        return None
+
+    def clean(self):
+        super().clean()
+        if self.status == self.ScheduleStatus.CANCELLED:
+            return
+        limit = self.required_guard_limit()
+        if not limit:
+            return
+        schedules = GuardSchedule.objects.filter(
+            site_id=self.site_id,
+            shift_id=self.shift_id,
+            shift_date=self.shift_date,
+        ).exclude(status=self.ScheduleStatus.CANCELLED)
+        if self.pk:
+            schedules = schedules.exclude(pk=self.pk)
+        if schedules.count() >= limit:
+            raise ValidationError(
+                {
+                    "site": (
+                        f"{self.site} already has the required {limit} guard(s) "
+                        f"for {self.shift} on {self.shift_date}."
+                    )
+                }
+            )
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class Incident(TimeStampedModel):

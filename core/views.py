@@ -121,7 +121,9 @@ def contract_schedule_limit_reached(site, shift, shift_date, deployment=None):
     limit = contract_required_guards(site, shift, shift_date)
     if not limit:
         return False
-    schedules = models.GuardSchedule.objects.filter(site=site, shift=shift, shift_date=shift_date)
+    schedules = models.GuardSchedule.objects.filter(site=site, shift=shift, shift_date=shift_date).exclude(
+        status=models.GuardSchedule.ScheduleStatus.CANCELLED
+    )
     if deployment and deployment.pk:
         schedules = schedules.exclude(deployment=deployment)
     return schedules.count() >= limit

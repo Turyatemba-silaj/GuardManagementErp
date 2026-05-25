@@ -2,6 +2,7 @@ from decimal import Decimal
 from io import BytesIO
 
 from django.contrib.auth.models import Group, User
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import TestCase, override_settings
@@ -912,6 +913,65 @@ class GuardSchedulingTests(TestCase):
             GuardSchedule.objects.filter(site=self.site, shift=self.shift, shift_date="2026-05-21").count(),
             1,
         )
+
+    def test_guard_schedule_model_rejects_more_than_required_guards(self):
+        ContractSiteRequirement.objects.filter(site=self.site).update(required_guards=1)
+        second_deployment = Deployment.objects.create(
+            employee=self.replacement_guard,
+            client=self.client_record,
+            site=self.site,
+            shift=self.shift,
+            start_date="2026-05-22",
+        )
+        GuardSchedule.objects.create(
+            deployment=self.deployment,
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            shift_date="2026-05-22",
+        )
+
+        with self.assertRaises(ValidationError):
+            GuardSchedule.objects.create(
+                deployment=second_deployment,
+                employee=self.replacement_guard,
+                site=self.site,
+                shift=self.shift,
+                shift_date="2026-05-22",
+            )
+
+    def test_cancelled_guard_schedule_does_not_count_against_required_guards(self):
+        ContractSiteRequirement.objects.filter(site=self.site).update(required_guards=1)
+        second_deployment = Deployment.objects.create(
+            employee=self.replacement_guard,
+            client=self.client_record,
+            site=self.site,
+            shift=self.shift,
+            start_date="2026-05-23",
+        )
+        GuardSchedule.objects.create(
+            deployment=self.deployment,
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            shift_date="2026-05-23",
+            status=GuardSchedule.ScheduleStatus.CANCELLED,
+        )
+
+        GuardSchedule.objects.create(
+            deployment=second_deployment,
+            employee=self.replacement_guard,
+            site=self.site,
+            shift=self.shift,
+            shift_date="2026-05-23",
+        )
+
+        active_schedules = GuardSchedule.objects.filter(
+            site=self.site,
+            shift=self.shift,
+            shift_date="2026-05-23",
+        ).exclude(status=GuardSchedule.ScheduleStatus.CANCELLED)
+        self.assertEqual(active_schedules.count(), 1)
 
     def test_contract_requirement_is_created_from_existing_site_data(self):
         self.assertTrue(ContractSiteRequirement.objects.filter(site=self.site, required_guards=10).exists())
