@@ -1588,6 +1588,35 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(salary.basic_hours, Decimal("16.00"))
         self.assertEqual(salary.overtime_hours, Decimal("8.00"))
 
+    def test_marking_attendance_counts_full_month_not_only_first_two_days(self):
+        position = Position.objects.create(
+            position_title="Full Month Attendance Payroll Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+
+        for day in ("2026-05-16", "2026-05-17", "2026-05-18", "2026-05-19"):
+            self.client.get("/attendances/", {"site": self.site.id, "date": day})
+            schedule = GuardSchedule.objects.get(shift_date=day)
+            self.client.post(
+                "/attendances/",
+                {
+                    "site": str(self.site.id),
+                    "date": day,
+                    "schedule_ids": [str(schedule.id)],
+                    f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                    f"present_{schedule.id}": "yes",
+                },
+            )
+
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(salary.attendance_days, 4)
+        self.assertEqual(salary.basic_hours, Decimal("32.00"))
+        self.assertEqual(salary.overtime_hours, Decimal("16.00"))
+
     def test_payroll_days_count_each_marked_shift_on_same_date(self):
         position = Position.objects.create(
             position_title="Same Date Shift Payroll Guard",
