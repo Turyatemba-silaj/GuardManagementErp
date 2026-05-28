@@ -2271,3 +2271,64 @@ class ZoneAuthorizationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Sites")
         self.assertNotContains(response, 'href="/records/clients/"')
+
+    def test_attendance_supervisor_is_limited_to_attendance_workflows(self):
+        user = User.objects.create_user(username="attendance-supervisor", password="pass")
+        group, _ = Group.objects.get_or_create(name="Attendance Supervisor")
+        user.groups.add(group)
+        self.client.login(username="attendance-supervisor", password="pass")
+
+        allowed_paths = [
+            "/attendances/",
+            "/attendances/upload-roster/",
+            "/attendances/summary/pdf/?month=2026-05",
+            "/reports/attendance/",
+            "/records/attendance-records/",
+            "/records/roster-attendances/",
+        ]
+        blocked_paths = [
+            "/records/assets/",
+            "/records/incidents/",
+            "/records/clients/",
+            "/reports/assets/",
+            "/payroll/",
+        ]
+
+        for path in allowed_paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertNotEqual(response.status_code, 403)
+        for path in blocked_paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertIn(response.status_code, (302, 403))
+
+    def test_limited_operations_manager_can_access_asset_attendance_and_incident_workflows(self):
+        user = User.objects.create_user(username="limited-ops-manager", password="pass")
+        group, _ = Group.objects.get_or_create(name="Operations Limited Manager")
+        user.groups.add(group)
+        self.client.login(username="limited-ops-manager", password="pass")
+
+        allowed_paths = [
+            "/attendances/",
+            "/records/assets/",
+            "/records/incidents/",
+            "/records/attendance-records/",
+            "/reports/assets/",
+            "/reports/attendance/",
+        ]
+        blocked_paths = [
+            "/records/clients/",
+            "/records/payments/",
+            "/payroll/",
+            "/audit/",
+        ]
+
+        for path in allowed_paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertNotEqual(response.status_code, 403)
+        for path in blocked_paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertIn(response.status_code, (302, 403))

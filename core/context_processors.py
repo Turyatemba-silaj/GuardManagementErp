@@ -1,6 +1,6 @@
 from django.urls import reverse
 
-from .access import can_access_internal, is_manager
+from .access import can_access_internal, can_manage_attendance, can_manage_slug, is_manager
 from .crud import visible_grouped_registry
 
 
@@ -43,17 +43,22 @@ def model_nav_items(configs):
     return items
 
 
-def build_sidebar_nav(groups, can_manage_payroll):
+def build_sidebar_nav(groups, can_manage_payroll, user):
     operations_models = model_nav_items(groups.get("Operations", []))
     hr_models = model_nav_items(groups.get("Human Resource", []))
     finance_models = model_nav_items(groups.get("Finance", []))
 
-    operations = [
-        nav_item("Command Dashboard", reverse("core:dashboard"), "fa-gauge-high"),
-        nav_item("Attendances", reverse("core:attendances"), "fa-calendar-check"),
-        nav_item("Upload Duty Roster", reverse("core:upload_duty_roster"), "fa-file-excel"),
-        *operations_models,
-    ]
+    operations = []
+    if is_manager(user):
+        operations.append(nav_item("Command Dashboard", reverse("core:dashboard"), "fa-gauge-high"))
+    if can_manage_attendance(user):
+        operations.extend(
+            [
+                nav_item("Attendances", reverse("core:attendances"), "fa-calendar-check"),
+                nav_item("Upload Duty Roster", reverse("core:upload_duty_roster"), "fa-file-excel"),
+            ]
+        )
+    operations.extend(operations_models)
 
     human_resources = [
         *hr_models,
@@ -65,13 +70,20 @@ def build_sidebar_nav(groups, can_manage_payroll):
         *finance_models,
     ]
 
-    reports = [
-        nav_item("Reports Center", reverse("core:reports_center"), "fa-folder-open"),
-        nav_item("Attendance Report", reverse("core:attendance_report"), "fa-table-list"),
-        nav_item("Zonal Employees", reverse("core:zonal_guard_list"), "fa-map-location-dot"),
-        nav_item("Zone Shift Summary", reverse("core:zone_shift_summary"), "fa-chart-column"),
-        nav_item("Asset Report", reverse("core:asset_report"), "fa-boxes-stacked"),
-    ]
+    reports = []
+    if is_manager(user):
+        reports.append(nav_item("Reports Center", reverse("core:reports_center"), "fa-folder-open"))
+    if can_manage_attendance(user):
+        reports.append(nav_item("Attendance Report", reverse("core:attendance_report"), "fa-table-list"))
+    if is_manager(user):
+        reports.extend(
+            [
+                nav_item("Zonal Employees", reverse("core:zonal_guard_list"), "fa-map-location-dot"),
+                nav_item("Zone Shift Summary", reverse("core:zone_shift_summary"), "fa-chart-column"),
+            ]
+        )
+    if can_manage_slug(user, "assets"):
+        reports.append(nav_item("Asset Report", reverse("core:asset_report"), "fa-boxes-stacked"))
     if can_manage_payroll:
         reports.extend(
             [
@@ -88,17 +100,20 @@ def build_sidebar_nav(groups, can_manage_payroll):
             ]
         )
 
-    admin = [
-        nav_item("Public Home", reverse("core:home"), "fa-house"),
-        nav_item("Django Admin", "/admin/", "fa-screwdriver-wrench"),
-    ]
+    admin = [nav_item("Public Home", reverse("core:home"), "fa-house")]
+    if user.is_staff:
+        admin.append(nav_item("Django Admin", "/admin/", "fa-screwdriver-wrench"))
 
     return [
-        {"title": "Operations", "icon": "fa-building-shield", "items": operations},
-        {"title": "Human Resources", "icon": "fa-users-gear", "items": human_resources},
-        {"title": "Finance", "icon": "fa-file-invoice-dollar", "items": finance},
-        {"title": "Reports", "icon": "fa-folder-open", "items": reports},
-        {"title": "Admin", "icon": "fa-shield-halved", "items": admin},
+        group
+        for group in [
+            {"title": "Operations", "icon": "fa-building-shield", "items": operations},
+            {"title": "Human Resources", "icon": "fa-users-gear", "items": human_resources},
+            {"title": "Finance", "icon": "fa-file-invoice-dollar", "items": finance},
+            {"title": "Reports", "icon": "fa-folder-open", "items": reports},
+            {"title": "Admin", "icon": "fa-shield-halved", "items": admin},
+        ]
+        if group["items"]
     ]
 
 
@@ -131,7 +146,7 @@ def sidebar_menu(request):
         active_department = ""
 
     can_manage_payroll = is_manager(user)
-    sidebar_nav_groups = mark_active_nav(build_sidebar_nav(groups, can_manage_payroll), request.path)
+    sidebar_nav_groups = mark_active_nav(build_sidebar_nav(groups, can_manage_payroll, user), request.path)
 
     return {
         "sidebar_model_groups": selected_sidebar_groups(groups, active_department),

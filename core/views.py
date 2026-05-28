@@ -31,7 +31,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from . import models
-from .access import can_access_internal, can_manage_slug, has_model_perm, is_manager, is_supervisor
+from .access import can_access_internal, can_manage_attendance, can_manage_slug, has_model_perm, is_manager, is_supervisor
 from .accounting import ensure_default_accounts, post_all_accounting
 from .crud import MODEL_REGISTRY, visible_grouped_registry
 from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm, SecureModelForm
@@ -1011,7 +1011,7 @@ def attendance_summary_rows(start, end):
 
 
 @login_required
-@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+@user_passes_test(can_manage_attendance)
 def attendance_summary_pdf(request):
     selected_month = request.GET.get("month") or timezone.localdate().isoformat()[:7]
     start, end = month_bounds(f"{selected_month}-01")
@@ -2545,7 +2545,7 @@ def record_delete(request, slug, pk):
 
 
 @login_required
-@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+@user_passes_test(can_manage_attendance)
 def attendances(request):
     selected_site_id = request.GET.get("site") or request.POST.get("site")
     selected_date = request.GET.get("date") or request.POST.get("date") or timezone.localdate().isoformat()
@@ -3203,7 +3203,7 @@ def import_saracen_roster(worksheet, *, file_name="", uploaded_by=None, batch_re
 
 
 @login_required
-@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+@user_passes_test(can_manage_attendance)
 def duty_roster_template(request):
     workbook = Workbook()
     worksheet = workbook.active
@@ -3227,7 +3227,7 @@ def duty_roster_template(request):
 
 
 @login_required
-@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+@user_passes_test(can_manage_attendance)
 def upload_duty_roster(request):
     if request.method == "POST":
         roster_file = request.FILES.get("roster_file")
@@ -3583,7 +3583,7 @@ def zone_shift_summary(request):
 
 
 @login_required
-@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+@user_passes_test(can_manage_attendance)
 def attendance_report(request):
     employee_number = request.GET.get("employee_number", "").strip()
     start_date = request.GET.get("start_date", "").strip()
@@ -3669,7 +3669,7 @@ def attendance_report(request):
 
 
 @login_required
-@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+@user_passes_test(lambda user: can_manage_slug(user, "assets"))
 def asset_report(request):
     assets = models.Asset.objects.select_related("assigned_to")
     return render(request, "core/asset_report.html", {"assets": assets})
