@@ -1366,6 +1366,36 @@ class GuardSchedulingTests(TestCase):
             ["site_code", "site_name", "shift", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
         )
 
+    def test_roster_attendance_summary_pdf_downloads(self):
+        self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        schedule = GuardSchedule.objects.get()
+        self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                f"present_{schedule.id}": "yes",
+            },
+        )
+
+        response = self.client.get("/attendances/summary/pdf/", {"month": "2026-05"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("attendance-summary-2026-05.pdf", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_roster_pages_link_to_attendance_summary_pdf(self):
+        attendance_response = self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        upload_response = self.client.get("/attendances/upload-roster/")
+
+        self.assertContains(attendance_response, "PDF Summary")
+        self.assertContains(attendance_response, "/attendances/summary/pdf/?month=2026-05")
+        self.assertContains(upload_response, "Attendance Summary PDF")
+        self.assertContains(upload_response, "/attendances/summary/pdf/")
+
     def test_wide_monthly_roster_stores_o_as_off_attendance(self):
         workbook = Workbook()
         worksheet = workbook.active

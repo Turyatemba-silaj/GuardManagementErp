@@ -12,6 +12,7 @@
         </div>
         <div class="actions">
             <a class="btn btn-success" href="{% url 'core:duty_roster_template' %}">Download Template</a>
+            <a class="btn btn-light" href="{% url 'core:attendance_summary_pdf' %}?month={{ summary_month }}">Attendance Summary PDF</a>
             <a class="btn btn-light" href="{% url 'core:attendances' %}">Back to Attendances</a>
         </div>
     </div>

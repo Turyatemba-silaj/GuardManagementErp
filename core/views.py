@@ -882,7 +882,7 @@ def pdf_styles():
 def pdf_header_footer(title):
     def draw(canvas, document):
         canvas.saveState()
-        width, height = A4
+        width, height = document.pagesize
         canvas.setFillColor(PDF_NAVY)
         canvas.rect(0, height - 54, width, 54, stroke=0, fill=1)
         canvas.setFillColor(colors.white)
@@ -967,6 +967,102 @@ def signature_table(left_label="Prepared By", right_label="Approved By"):
         )
     )
     return table
+
+
+def attendance_summary_rows(start, end):
+    today = timezone.localdate()
+    is_current_month = start <= today <= end
+    elapsed_days = today.day if is_current_month else calendar.monthrange(start.year, start.month)[1]
+    month_days = calendar.monthrange(start.year, start.month)[1]
+    attendances = (
+        models.Attendance.objects.select_related("employee", "site", "schedule__site")
+        .filter(date__range=(start, end), status__iexact="Present")
+        .order_by("employee__first_name", "employee__last_name", "date")
+    )
+    totals = defaultdict(lambda: {"count": 0, "sites": set()})
+    for attendance in attendances:
+        totals[attendance.employee_id]["count"] += 1
+        site = attendance.site or (attendance.schedule.site if attendance.schedule_id else None)
+        if site:
+            site_label = f"{site.site_code or 'SITE'} - {site.site_name}"
+            totals[attendance.employee_id]["sites"].add(site_label)
+
+    employees = models.Employee.objects.filter(company_number__isnull=False).exclude(company_number="").order_by(
+        "first_name", "last_name", "company_number"
+    )
+    rows = []
+    for employee in employees:
+        total = totals[employee.id]
+        attended = total["count"]
+        projected = attended
+        if is_current_month and attended:
+            projected = max(attended, (attended * month_days + elapsed_days - 1) // elapsed_days)
+        rows.append(
+            {
+                "employee_number": employee.company_number,
+                "name": employee.full_name,
+                "sites": ", ".join(sorted(total["sites"])) or "-",
+                "attendance": attended,
+                "expected_growth": max(projected - attended, 0),
+                "projected_total": projected,
+            }
+        )
+    return rows
+
+
+@login_required
+@user_passes_test(lambda user: is_manager(user) or is_supervisor(user))
+def attendance_summary_pdf(request):
+    selected_month = request.GET.get("month") or timezone.localdate().isoformat()[:7]
+    start, end = month_bounds(f"{selected_month}-01")
+    rows = attendance_summary_rows(start, end)
+    total_attendance = sum(row["attendance"] for row in rows)
+    total_growth = sum(row["expected_growth"] for row in rows)
+
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        rightMargin=24,
+        leftMargin=24,
+        topMargin=72,
+        bottomMargin=42,
+    )
+    styles = pdf_styles()
+    elements = [
+        Paragraph("Roster Attendance Summary", styles["DocTitle"]),
+        Paragraph(f"Period: {start:%Y-%m-%d} to {end:%Y-%m-%d}", styles["SmallMuted"]),
+        Spacer(1, 10),
+        key_value_table(
+            [
+                ["Employees", len(rows)],
+                ["Total attendance", total_attendance],
+                ["Expected growth", total_growth],
+            ],
+            [110, 120],
+        ),
+        Spacer(1, 12),
+        Paragraph("Employee Attendance Summary", styles["SectionTitle"]),
+    ]
+    data = [["Emp No.", "Name", "Sites Worked", "Attendance", "Expected Growth", "Projected Total"]]
+    for row in rows:
+        data.append(
+            [
+                row["employee_number"],
+                row["name"],
+                Paragraph(row["sites"], styles["SmallMuted"]),
+                row["attendance"],
+                row["expected_growth"],
+                row["projected_total"],
+            ]
+        )
+    elements.append(styled_table(data, col_widths=[64, 120, 300, 68, 82, 82], right_columns=(3, 4, 5)))
+    elements.extend([Spacer(1, 18), signature_table("Prepared By", "Operations Manager")])
+    document.build(elements, onFirstPage=pdf_header_footer("Roster Attendance Summary"), onLaterPages=pdf_header_footer("Roster Attendance Summary"))
+
+    response = HttpResponse(output.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="attendance-summary-{selected_month}.pdf"'
+    return response
 
 
 @login_required
@@ -3370,7 +3466,14 @@ def upload_duty_roster(request):
         return redirect("core:attendances")
 
     recent_roster_rows = models.RosterAttendance.objects.select_related("employee", "site", "shift", "schedule").order_by("-created_at")[:20]
-    return render(request, "core/upload_duty_roster.html", {"recent_roster_rows": recent_roster_rows})
+    return render(
+        request,
+        "core/upload_duty_roster.html",
+        {
+            "recent_roster_rows": recent_roster_rows,
+            "summary_month": timezone.localdate().strftime("%Y-%m"),
+        },
+    )
 
 
 @login_required

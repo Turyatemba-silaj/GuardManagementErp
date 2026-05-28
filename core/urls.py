@@ -31,6 +31,7 @@ urlpatterns = [
     path("api/attendance/swipe/", views.attendance_swipe_api, name="attendance_swipe_api"),
     path("attendances/upload-roster/", views.upload_duty_roster, name="upload_duty_roster"),
     path("attendances/roster-template/", views.duty_roster_template, name="duty_roster_template"),
+    path("attendances/summary/pdf/", views.attendance_summary_pdf, name="attendance_summary_pdf"),
     path("reports/", views.reports_center, name="reports_center"),
     path("reports/zonal-guard-list/", views.zonal_guard_list, name="zonal_guard_list"),
     path("reports/zone-shift-summary/", views.zone_shift_summary, name="zone_shift_summary"),

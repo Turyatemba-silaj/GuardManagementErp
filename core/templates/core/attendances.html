@@ -127,7 +127,7 @@
     <div class="table-tools">
         <div class="buttons" aria-label="Export buttons">
             <span class="tool-btn">Excel</span>
-            <span class="tool-btn">PDF</span>
+            <a class="tool-btn" href="{% url 'core:attendance_summary_pdf' %}?month={{ selected_date|slice:':7' }}">PDF Summary</a>
             <span class="tool-btn">Column visibility</span>
         </div>
         <label class="search" for="search">Search:
