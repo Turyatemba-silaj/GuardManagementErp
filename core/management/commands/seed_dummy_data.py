@@ -503,9 +503,10 @@ class Command(BaseCommand):
             attendance, _created = models.Attendance.objects.update_or_create(
                 employee=employees[index],
                 date=today - timedelta(days=index),
+                site=schedule.site,
+                shift=shifts[index],
                 defaults={
                     "schedule": schedule,
-                    "shift": shifts[index],
                     "time_in": time(8, 0),
                     "time_out": time(17, 0),
                     "status": "Present",

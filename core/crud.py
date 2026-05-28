@@ -213,6 +213,7 @@ MODEL_REGISTRY = {
         "Human Resource",
         (
             "employee",
+            "site",
             "schedule",
             "shift",
             "date",

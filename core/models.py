@@ -927,6 +927,13 @@ class Attendance(TimeStampedModel):
         IMPORT = "import", "Imported"
 
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="attendance_records")
+    site = models.ForeignKey(
+        Site,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="attendance_records",
+    )
     schedule = models.OneToOneField(
         GuardSchedule,
         on_delete=models.SET_NULL,
@@ -963,7 +970,7 @@ class Attendance(TimeStampedModel):
 
     class Meta:
         ordering = ["-date"]
-        unique_together = ("employee", "date", "shift")
+        unique_together = ("employee", "date", "shift", "site")
 
     def __str__(self):
         return f"{self.employee} - {self.date}"

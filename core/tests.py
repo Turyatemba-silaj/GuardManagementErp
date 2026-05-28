@@ -1645,6 +1645,62 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(salary.basic_hours, Decimal("16.00"))
         self.assertEqual(salary.overtime_hours, Decimal("8.00"))
 
+    def test_payroll_days_count_same_guard_shift_at_different_sites(self):
+        position = Position.objects.create(
+            position_title="Multi Site Payroll Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+        second_site = Site.objects.create(
+            client=self.client_record,
+            site_name="Warehouse Gate",
+            site_address="Plot 2",
+            city="Kampala",
+        )
+        second_deployment = Deployment.objects.create(
+            employee=self.guard,
+            client=self.client_record,
+            site=second_site,
+            shift=self.shift,
+            start_date="2026-05-01",
+        )
+        first_schedule = GuardSchedule.objects.create(
+            deployment=self.deployment,
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            shift_date="2026-05-16",
+        )
+        second_schedule = GuardSchedule.objects.create(
+            deployment=second_deployment,
+            employee=self.guard,
+            site=second_site,
+            shift=self.shift,
+            shift_date="2026-05-16",
+        )
+
+        self.client.post(
+            "/attendances/",
+            {
+                "site": "",
+                "date": "2026-05-16",
+                "schedule_ids": [str(first_schedule.id), str(second_schedule.id)],
+                f"scheduled_guard_{first_schedule.id}": str(self.guard.id),
+                f"present_{first_schedule.id}": "yes",
+                f"scheduled_guard_{second_schedule.id}": str(self.guard.id),
+                f"present_{second_schedule.id}": "yes",
+            },
+        )
+
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(Attendance.objects.filter(employee=self.guard, date="2026-05-16", shift=self.shift).count(), 2)
+        self.assertEqual(salary.attendance_days, 2)
+        self.assertEqual(salary.basic_hours, Decimal("16.00"))
+        self.assertEqual(salary.overtime_hours, Decimal("8.00"))
+
     def test_payroll_exports_and_payslip_are_downloadable(self):
         position = Position.objects.create(
             position_title="Payroll Export Guard",

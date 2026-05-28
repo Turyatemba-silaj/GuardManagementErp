@@ -714,6 +714,7 @@ def attendance_swipe_api(request):
                 employee=employee,
                 date=schedule.shift_date,
                 shift=schedule.shift,
+                site=site,
                 defaults=defaults,
             )
             schedule.status = models.GuardSchedule.ScheduleStatus.COMPLETED
@@ -2518,9 +2519,11 @@ def attendances(request):
                     employee=selected_employee,
                     date=schedule.shift_date,
                     shift=schedule.shift,
+                    site=schedule.site,
                 ).first()
             attendance_values = {
                 "employee": selected_employee,
+                "site": schedule.site,
                 "schedule": schedule,
                 "shift": schedule.shift,
                 "date": schedule.shift_date,
@@ -2536,6 +2539,7 @@ def attendances(request):
                         employee=selected_employee,
                         date=schedule.shift_date,
                         shift=schedule.shift,
+                        site=schedule.site,
                     )
                     .exclude(pk=attendance.pk)
                     .first()
@@ -2584,6 +2588,7 @@ def attendances(request):
                         employee=replacement_employee,
                         date=schedule.shift_date,
                         shift=schedule.shift,
+                        site=schedule.site,
                         defaults={
                             "schedule": None,
                             "status": "Present",
@@ -3497,6 +3502,7 @@ def attendance_report(request):
                 employee=schedule.replacement_employee,
                 date=schedule.shift_date,
                 shift=schedule.shift,
+                site=schedule.site,
                 status__iexact="Present",
             ).first()
             attended_employee = replacement

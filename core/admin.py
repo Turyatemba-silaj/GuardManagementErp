@@ -499,9 +499,9 @@ class JobOfferAdmin(admin.ModelAdmin):
 
 @admin.register(models.Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ("employee", "schedule", "shift", "date", "time_in", "time_out", "status", "capture_source", "device_id", "geofence_distance_meters")
-    list_filter = ("status", "capture_source", "date", "schedule__site")
-    search_fields = ("employee__first_name", "employee__last_name", "employee__work_card_uid", "device_id", "schedule__site__site_name")
+    list_display = ("employee", "site", "schedule", "shift", "date", "time_in", "time_out", "status", "capture_source", "device_id", "geofence_distance_meters")
+    list_filter = ("status", "capture_source", "date", "site")
+    search_fields = ("employee__first_name", "employee__last_name", "employee__work_card_uid", "device_id", "site__site_name", "schedule__site__site_name")
     date_hierarchy = "date"
 
 
