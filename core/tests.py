@@ -1559,6 +1559,36 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(salary.gross_pay, Decimal("56000.00"))
         self.assertEqual(salary.net_salary, Decimal("53200.00"))
 
+    def test_payroll_refresh_resets_days_when_attendance_is_no_longer_present(self):
+        position = Position.objects.create(
+            position_title="Attendance Reset Payroll Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+        attendance = Attendance.objects.create(
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            date="2026-05-16",
+            status="Present",
+        )
+        self.client.get("/payroll/", {"month": "2026-05"})
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(salary.attendance_days, 1)
+
+        attendance.status = "Absent"
+        attendance.save(update_fields=["status", "updated_at"])
+        self.client.get("/payroll/", {"month": "2026-05"})
+        salary.refresh_from_db()
+
+        self.assertEqual(salary.attendance_days, 0)
+        self.assertEqual(salary.basic_hours, Decimal("0.00"))
+        self.assertEqual(salary.overtime_hours, Decimal("0.00"))
+        self.assertEqual(salary.gross_pay, Decimal("0.00"))
+
     def test_marking_attendance_increments_payroll_days(self):
         position = Position.objects.create(
             position_title="Marked Attendance Payroll Guard",

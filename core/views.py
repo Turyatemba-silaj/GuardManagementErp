@@ -445,12 +445,18 @@ def generate_payroll_from_attendance(start, end):
         totals[employee.id]["overtime_hours"] += overtime_hours
 
     salaries = []
-    for employee_id, total in totals.items():
-        employee = employees[employee_id]
+    existing_salaries = {
+        salary.employee_id: salary
+        for salary in models.Salary.objects.select_related("employee").filter(pay_period_start=start)
+    }
+    employee_ids = set(totals) | set(existing_salaries)
+    for employee_id in employee_ids:
+        total = totals[employee_id]
+        employee = employees.get(employee_id) or existing_salaries[employee_id].employee
         hourly_rate = payroll_hourly_rate(employee)
         basic_salary = money(total["basic_hours"] * hourly_rate)
         overtime_pay = money(total["overtime_hours"] * hourly_rate * Decimal("1.50"))
-        existing = models.Salary.objects.filter(employee=employee, pay_period_start=start).first()
+        existing = existing_salaries.get(employee_id)
         salary, _created = models.Salary.objects.update_or_create(
             employee=employee,
             pay_period_start=start,
@@ -476,6 +482,16 @@ def generate_payroll_from_attendance(start, end):
 def refresh_payroll_for_date(value):
     start, end = month_bounds(value.isoformat())
     return generate_payroll_from_attendance(start, end)
+
+
+def refresh_payroll_for_dates(*values):
+    refreshed = {}
+    for value in values:
+        if not value:
+            continue
+        start, end = month_bounds(value.isoformat())
+        refreshed[start] = generate_payroll_from_attendance(start, end)
+    return refreshed
 
 
 def decimal_from_payload(value):
@@ -2367,6 +2383,8 @@ def record_create(request, slug):
                 instance.allocated_by = request.user
             instance.save()
             form.save_m2m()
+        if config.model is models.Attendance:
+            refresh_payroll_for_date(instance.date)
         messages.success(request, f"{config.title} record added successfully.")
         return redirect("core:record_list", slug=slug)
     template = "core/invoice_form.html" if config.model is models.Invoice else "core/record_form.html"
@@ -2383,6 +2401,7 @@ def record_update(request, slug, pk):
     config = get_model_config(slug)
     instance = get_object_or_404(scoped_queryset(request.user, slug, config.model.objects.all()), pk=pk)
     form_class = build_model_form(config.model)
+    previous_attendance_date = instance.date if config.model is models.Attendance else None
     form = form_class(request.POST or None, request.FILES or None, instance=instance)
     if request.method == "POST" and form.is_valid():
         if config.model is models.Invoice:
@@ -2391,6 +2410,8 @@ def record_update(request, slug, pk):
             updated_instance = form.save(commit=False)
             updated_instance.save()
             form.save_m2m()
+        if config.model is models.Attendance:
+            refresh_payroll_for_dates(previous_attendance_date, updated_instance.date)
         messages.success(request, f"{config.title} record updated successfully.")
         return redirect("core:record_list", slug=slug)
     template = "core/invoice_form.html" if config.model is models.Invoice else "core/record_form.html"
@@ -2410,9 +2431,12 @@ def record_delete(request, slug, pk):
         return redirect("core:attendances")
     config = get_model_config(slug)
     instance = get_object_or_404(scoped_queryset(request.user, slug, config.model.objects.all()), pk=pk)
+    attendance_date = instance.date if config.model is models.Attendance else None
     if request.method == "POST":
         try:
             instance.delete()
+            if config.model is models.Attendance:
+                refresh_payroll_for_date(attendance_date)
             messages.success(request, f"{config.title} record deleted successfully.")
         except ProtectedError:
             messages.error(request, "This record is linked to other records and cannot be deleted.")
@@ -2557,6 +2581,7 @@ def attendances(request):
                 attendance.save(
                     update_fields=[
                         "employee",
+                        "site",
                         "schedule",
                         "shift",
                         "date",
