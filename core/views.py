@@ -429,7 +429,7 @@ def money(value):
 
 
 def generate_payroll_from_attendance(start, end):
-    totals = defaultdict(lambda: {"days": set(), "basic_hours": Decimal("0.00"), "overtime_hours": Decimal("0.00")})
+    totals = defaultdict(lambda: {"days": 0, "basic_hours": Decimal("0.00"), "overtime_hours": Decimal("0.00")})
     attendances = (
         models.Attendance.objects.select_related("employee__position", "shift", "schedule__shift")
         .filter(date__range=(start, end), status__iexact="Present")
@@ -440,7 +440,7 @@ def generate_payroll_from_attendance(start, end):
         employee = attendance.employee
         employees[employee.id] = employee
         basic_hours, overtime_hours = attendance_shift_hours(attendance)
-        totals[employee.id]["days"].add(attendance.date)
+        totals[employee.id]["days"] += 1
         totals[employee.id]["basic_hours"] += basic_hours
         totals[employee.id]["overtime_hours"] += overtime_hours
 
@@ -456,7 +456,7 @@ def generate_payroll_from_attendance(start, end):
             pay_period_start=start,
             defaults={
                 "pay_period_end": end,
-                "attendance_days": len(total["days"]),
+                "attendance_days": total["days"],
                 "basic_hours": total["basic_hours"],
                 "overtime_hours": total["overtime_hours"],
                 "basic_salary": basic_salary,

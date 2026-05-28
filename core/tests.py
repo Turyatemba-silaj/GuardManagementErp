@@ -1505,6 +1505,92 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(salary.gross_pay, Decimal("56000.00"))
         self.assertEqual(salary.net_salary, Decimal("53200.00"))
 
+    def test_marking_attendance_increments_payroll_days(self):
+        position = Position.objects.create(
+            position_title="Marked Attendance Payroll Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+
+        for day in ("2026-05-16", "2026-05-17"):
+            self.client.get("/attendances/", {"site": self.site.id, "date": day})
+            schedule = GuardSchedule.objects.get(shift_date=day)
+            self.client.post(
+                "/attendances/",
+                {
+                    "site": str(self.site.id),
+                    "date": day,
+                    "schedule_ids": [str(schedule.id)],
+                    f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                    f"present_{schedule.id}": "yes",
+                },
+            )
+
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(salary.attendance_days, 2)
+        self.assertEqual(salary.basic_hours, Decimal("16.00"))
+        self.assertEqual(salary.overtime_hours, Decimal("8.00"))
+
+    def test_payroll_days_count_each_marked_shift_on_same_date(self):
+        position = Position.objects.create(
+            position_title="Same Date Shift Payroll Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+        night_shift, _created = Shift.objects.update_or_create(
+            code="N",
+            defaults={
+                "shift_name": "Night",
+                "start_time": "20:00",
+                "end_time": "08:00",
+            },
+        )
+        night_deployment = Deployment.objects.create(
+            employee=self.guard,
+            client=self.client_record,
+            site=self.site,
+            shift=night_shift,
+            start_date="2026-05-01",
+        )
+        first_schedule = GuardSchedule.objects.create(
+            deployment=self.deployment,
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            shift_date="2026-05-16",
+        )
+        second_schedule = GuardSchedule.objects.create(
+            deployment=night_deployment,
+            employee=self.guard,
+            site=self.site,
+            shift=night_shift,
+            shift_date="2026-05-16",
+        )
+
+        self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(first_schedule.id), str(second_schedule.id)],
+                f"scheduled_guard_{first_schedule.id}": str(self.guard.id),
+                f"present_{first_schedule.id}": "yes",
+                f"scheduled_guard_{second_schedule.id}": str(self.guard.id),
+                f"present_{second_schedule.id}": "yes",
+            },
+        )
+
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(salary.attendance_days, 2)
+        self.assertEqual(salary.basic_hours, Decimal("16.00"))
+        self.assertEqual(salary.overtime_hours, Decimal("8.00"))
+
     def test_payroll_exports_and_payslip_are_downloadable(self):
         position = Position.objects.create(
             position_title="Payroll Export Guard",
