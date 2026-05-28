@@ -7,13 +7,13 @@
         --sentinel-ink: #111827;
         --sentinel-text: #253244;
         --sentinel-muted: #64748b;
-        --sentinel-bg: #f4f6f8;
+        --sentinel-bg: #f3f7f6;
         --sentinel-panel: #ffffff;
         --sentinel-line: #dbe3ec;
-        --sentinel-rail: #0b3b78;
-        --sentinel-green: #2563eb;
+        --sentinel-rail: #142c2f;
+        --sentinel-green: #0f8b6f;
         --sentinel-blue: #2563eb;
-        --sentinel-red: #2563eb;
+        --sentinel-red: #c2413a;
     }
 
     body {
@@ -36,7 +36,8 @@
     .main-sidebar,
     .app-sidebar {
         background:
-            linear-gradient(180deg, rgba(96, 165, 250, .24), rgba(37, 99, 235, .12) 32%, transparent 66%),
+            linear-gradient(180deg, rgba(16, 185, 129, .12), transparent 260px),
+            linear-gradient(145deg, #10282b, #183d38 58%, #10282b),
             var(--sentinel-rail) !important;
         color: #f8fafc;
     }
@@ -46,7 +47,7 @@
         display: flex;
         align-items: center;
         color: #f8fafc !important;
-        background: rgba(8, 47, 104, .55);
+        background: rgba(255, 255, 255, .06);
         border-bottom: 1px solid rgba(255, 255, 255, .1) !important;
         font-weight: 850;
         letter-spacing: 0;
@@ -61,9 +62,9 @@
         justify-content: center;
         margin: 0 10px 0 4px;
         border-radius: 9px;
-        background: rgba(147, 197, 253, .22);
-        border: 1px solid rgba(191, 219, 254, .42);
-        color: #bfdbfe;
+        background: rgba(232, 245, 241, .1);
+        border: 1px solid rgba(110, 231, 183, .32);
+        color: #a7f3d0;
         font-weight: 900;
     }
 
@@ -79,7 +80,7 @@
     .user-panel .info a,
     .sidebar a,
     .app-sidebar a {
-        color: #e0f2fe !important;
+        color: #d5e1de !important;
         font-weight: 750;
     }
 
@@ -95,17 +96,17 @@
     .nav-sidebar .nav-link {
         border-radius: 7px;
         margin: 2px 8px;
-        color: #dbeafe !important;
+        color: #d5e1de !important;
     }
 
     .nav-sidebar .nav-link.active,
     .nav-sidebar .menu-open > .nav-link {
-        background: rgba(96, 165, 250, .24) !important;
-        color: #ffffff !important;
+        background: #e8f5f1 !important;
+        color: #123331 !important;
         box-shadow: inset 3px 0 0 var(--sentinel-green);
     }
 
-    .nav-sidebar .nav-icon { color: #bfdbfe; }
+    .nav-sidebar .nav-icon { color: #9ee6cf; }
 
     .main-header,
     .app-header,
@@ -242,8 +243,8 @@
     .btn-primary:hover,
     .btn-success:hover,
     input[type="submit"]:hover {
-        background: #1d4ed8 !important;
-        border-color: #1d4ed8 !important;
+        background: #0b735d !important;
+        border-color: #0b735d !important;
     }
 
     .btn-danger,
@@ -263,8 +264,7 @@
     .login-page,
     .register-page {
         background:
-            radial-gradient(circle at 22% 12%, rgba(96, 165, 250, .3), transparent 30%),
-            linear-gradient(135deg, rgba(15, 23, 42, .96), rgba(23, 32, 54, .96)),
+            linear-gradient(135deg, rgba(16, 40, 43, .96), rgba(24, 61, 56, .96)),
             var(--sentinel-rail) !important;
     }
 
@@ -290,9 +290,9 @@
         justify-content: center;
         margin-right: 10px;
         border-radius: 10px;
-        background: rgba(147, 197, 253, .22);
-        border: 1px solid rgba(191, 219, 254, .42);
-        color: #bfdbfe;
+        background: rgba(232, 245, 241, .1);
+        border: 1px solid rgba(110, 231, 183, .32);
+        color: #a7f3d0;
         font-weight: 900;
     }
 

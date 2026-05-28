@@ -10,12 +10,12 @@
             --ink: #121826;
             --muted: #647184;
             --paper: #ffffff;
-            --mist: #f3f6f9;
-            --line: #d8e0ea;
-            --navy: #0d1b2f;
-            --green: #2563eb;
-            --amber: #2563eb;
-            --red: #2563eb;
+            --mist: #f3f7f6;
+            --line: #dbe5e8;
+            --navy: #142c2f;
+            --green: #0f8b6f;
+            --amber: #b7791f;
+            --red: #c2413a;
             --blue: #2467a6;
         }
         * { box-sizing: border-box; }
@@ -34,7 +34,7 @@
             top: 0;
             z-index: 20;
             border-bottom: 1px solid rgba(255,255,255,.18);
-            background: rgba(13, 27, 47, .9);
+            background: rgba(20, 44, 47, .92);
             color: #fff;
             backdrop-filter: blur(14px);
         }
@@ -64,6 +64,7 @@
             background: var(--green);
             color: #fff;
             font-weight: 900;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
         }
         .nav-links {
             display: flex;
@@ -83,7 +84,7 @@
             display: inline-flex;
             align-items: center;
             padding: 9px 13px;
-            border-radius: 6px;
+            border-radius: 7px;
             background: #fff;
             color: var(--navy) !important;
         }
@@ -93,7 +94,7 @@
             align-items: end;
             color: #fff;
             background:
-                linear-gradient(90deg, rgba(7, 16, 30, .92) 0%, rgba(7, 16, 30, .7) 40%, rgba(7, 16, 30, .08) 74%),
+                linear-gradient(90deg, rgba(11, 31, 32, .94) 0%, rgba(11, 31, 32, .72) 40%, rgba(11, 31, 32, .1) 74%),
                 url("{% static 'core/home/security-hero.png' %}") center / cover no-repeat;
         }
         .hero-inner {
@@ -145,7 +146,7 @@
             justify-content: center;
             gap: 8px;
             padding: 11px 16px;
-            border-radius: 6px;
+            border-radius: 7px;
             border: 1px solid transparent;
             text-decoration: none;
             font-weight: 850;
