@@ -1,9 +1,12 @@
 from django.contrib import admin
+from django.contrib.admin.models import ADDITION, CHANGE, DELETION, LogEntry
 from django.contrib.admin.sites import NotRegistered
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import GroupAdmin as DjangoGroupAdmin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.models import Group
+from django.urls import NoReverseMatch, reverse
+from django.utils.html import format_html
 
 from . import models
 
@@ -13,6 +16,8 @@ admin.site.site_title = "System Admin"
 admin.site.index_title = "System Admin"
 
 User = get_user_model()
+LogEntry._meta.verbose_name = "Activity log"
+LogEntry._meta.verbose_name_plural = "Activity logs"
 
 for auth_model in (User, Group):
     try:
@@ -84,6 +89,73 @@ class SentinelGroupAdmin(DjangoGroupAdmin):
     @admin.display(description="Users")
     def user_total(self, obj):
         return obj.user_set.count()
+
+
+@admin.register(LogEntry)
+class ActivityLogAdmin(admin.ModelAdmin):
+    list_display = ("action_time", "user", "action_badge", "content_type", "object_link", "change_summary")
+    list_filter = ("action_flag", "content_type", "user", "action_time")
+    search_fields = ("user__username", "user__first_name", "user__last_name", "object_repr", "change_message")
+    readonly_fields = (
+        "action_time",
+        "user",
+        "action_flag",
+        "content_type",
+        "object_id",
+        "object_repr",
+        "change_message",
+        "change_summary",
+        "object_link",
+    )
+    date_hierarchy = "action_time"
+    ordering = ("-action_time",)
+    list_per_page = 50
+
+    @admin.display(description="Action", ordering="action_flag")
+    def action_badge(self, obj):
+        labels = {
+            ADDITION: ("Added", "#0f8b6f"),
+            CHANGE: ("Changed", "#2563eb"),
+            DELETION: ("Deleted", "#c2413a"),
+        }
+        label, color = labels.get(obj.action_flag, ("Activity", "#667085"))
+        return format_html(
+            '<span style="display:inline-block;min-width:72px;padding:3px 8px;border-radius:999px;'
+            'background:{}1a;color:{};font-weight:800;text-align:center;">{}</span>',
+            color,
+            color,
+            label,
+        )
+
+    @admin.display(description="Record")
+    def object_link(self, obj):
+        if not obj.content_type_id or not obj.object_id or obj.action_flag == DELETION:
+            return obj.object_repr or "-"
+        try:
+            url = reverse(
+                f"admin:{obj.content_type.app_label}_{obj.content_type.model}_change",
+                args=[obj.object_id],
+            )
+        except NoReverseMatch:
+            return obj.object_repr or "-"
+        return format_html('<a href="{}">{}</a>', url, obj.object_repr or obj.object_id)
+
+    @admin.display(description="Details")
+    def change_summary(self, obj):
+        message = obj.get_change_message()
+        return message or "-"
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("user", "content_type")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(models.Client)

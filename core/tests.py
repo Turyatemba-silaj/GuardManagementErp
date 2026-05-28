@@ -6,6 +6,7 @@ import tempfile
 from unittest.mock import patch
 
 from django.contrib.auth.models import Group, Permission, User
+from django.contrib.admin.models import LogEntry
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -166,6 +167,50 @@ class AdminLoginRedirectTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], settings.LOGIN_REDIRECT_URL)
         self.assertIn("sessionid", self.client.cookies)
+
+
+class ActivityLogAdminTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_superuser(
+            username="activity-admin",
+            email="activity@example.com",
+            password="temporary-pass",
+        )
+        self.client.login(username="activity-admin", password="temporary-pass")
+
+    def test_admin_activity_logs_record_and_display_admin_actions(self):
+        response = self.client.post(
+            "/admin/core/client/add/",
+            {
+                "client_name": "Logged Client",
+                "contact_person": "Amina",
+                "phone_number": "0700000200",
+                "email": "",
+                "address": "",
+                "contract_start_date": "2026-05-01",
+                "contract_end_date": "",
+                "contract_status": StatusChoices.ACTIVE,
+                "_save": "Save",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        log_entry = LogEntry.objects.select_related("user", "content_type").get(object_repr="Logged Client")
+        self.assertEqual(log_entry.user, self.admin_user)
+        self.assertEqual(log_entry.content_type.model, "client")
+
+        index = self.client.get("/admin/")
+        changelist = self.client.get("/admin/admin/logentry/")
+
+        self.assertContains(index, "Activity logs")
+        self.assertEqual(changelist.status_code, 200)
+        self.assertContains(changelist, "Activity logs")
+        self.assertContains(changelist, "Logged Client")
+        self.assertContains(changelist, "activity-admin")
+        self.assertContains(changelist, "Added")
+
+    def test_admin_activity_logs_are_read_only(self):
+        self.assertEqual(self.client.get("/admin/admin/logentry/add/").status_code, 403)
 
 
 class ContractDeliverableFormTests(TestCase):
