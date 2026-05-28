@@ -31,10 +31,10 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from . import models
-from .access import can_access_internal, can_manage_slug, is_manager, is_supervisor
+from .access import can_access_internal, can_manage_slug, has_model_perm, is_manager, is_supervisor
 from .accounting import ensure_default_accounts, post_all_accounting
 from .crud import MODEL_REGISTRY, visible_grouped_registry
-from .forms import InvoiceForm, SecureModelForm
+from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm, SecureModelForm
 from .security import validate_excel_upload
 
 
@@ -56,6 +56,10 @@ def get_model_config(slug):
 
 
 def build_model_form(model):
+    if model is models.Contract:
+        return ContractForm
+    if model is models.ContractSiteRequirement:
+        return ContractSiteRequirementForm
     if model is models.Invoice:
         return InvoiceForm
     form = modelform_factory(
@@ -306,6 +310,51 @@ def contract_invoice_data(request, pk):
         .filter(Q(end_date__gte=billing_month) | Q(end_date__isnull=True))
         .order_by("site__site_name", "shift__start_time", "start_date")
     )
+
+
+def contract_payload(contract):
+    return {
+        "id": contract.id,
+        "number": contract.contract_number,
+        "billing_rate": str(contract.billing_rate),
+        "start_date": contract.start_date.isoformat() if contract.start_date else "",
+        "end_date": contract.end_date.isoformat() if contract.end_date else "",
+        "dog_count": contract.dog_count,
+        "dog_rate": str(contract.dog_rate),
+        "metal_detector_count": contract.metal_detector_count,
+        "metal_detector_rate": str(contract.metal_detector_rate),
+        "walk_through_machine_count": contract.walk_through_detector_count,
+        "walk_through_machine_rate": str(contract.walk_through_detector_rate),
+        "panic_baton_count": contract.panic_baton_count,
+        "panic_baton_rate": str(contract.panic_baton_rate),
+        "handcuffs_count": contract.handcuffs_count,
+        "handcuffs_rate": str(contract.handcuffs_rate),
+    }
+
+
+@login_required
+@user_passes_test(can_access_internal)
+def client_contract_requirement_data(request, pk):
+    client = get_object_or_404(models.Client, pk=pk)
+    contracts = [contract_payload(contract) for contract in client.contracts.order_by("-start_date", "contract_number")]
+    sites = [
+        {
+            "id": site.id,
+            "name": str(site),
+            "site_name": site.site_name,
+            "site_address": site.site_address,
+            "city": site.city,
+        }
+        for site in client.sites.order_by("site_name")
+    ]
+    return JsonResponse(
+        {
+            "client": {"id": client.id, "name": client.client_name},
+            "next_site_code": ContractSiteRequirementForm.next_site_code(client),
+            "contracts": contracts,
+            "sites": sites,
+        }
+    )
     sites = {}
     for requirement in requirements:
         site = requirement.site
@@ -501,7 +550,7 @@ def healthz(request):
                         "CREATE TABLE IF NOT EXISTS core_healthcheck_write "
                         "(id integer primary key autoincrement, checked_at text)"
                     )
-                    cursor.execute("INSERT INTO core_healthcheck_write (checked_at) VALUES (?)", [timezone.now().isoformat()])
+                    cursor.execute("INSERT INTO core_healthcheck_write (checked_at) VALUES (%s)", [timezone.now().isoformat()])
                     cursor.execute(
                         "DELETE FROM core_healthcheck_write "
                         "WHERE id NOT IN (SELECT id FROM core_healthcheck_write ORDER BY id DESC LIMIT 5)"
@@ -2199,9 +2248,9 @@ def payslip_pdf(request, pk):
 
 @login_required
 def record_list(request, slug):
+    config = get_model_config(slug)
     if not can_manage_slug(request.user, slug):
         return HttpResponseForbidden("You do not have permission to access this page.")
-    config = get_model_config(slug)
     queryset = scoped_queryset(request.user, slug, config.model.objects.all())
     search_query = request.GET.get("q", "").strip()
     rows = []
@@ -2233,16 +2282,16 @@ def record_list(request, slug):
             "column_labels": [column_label(column) for column in config.columns],
             "rows": rows,
             "search_query": search_query,
-            "can_add_record": is_manager(request.user) or is_supervisor(request.user),
-            "can_edit_record": is_manager(request.user) or is_supervisor(request.user),
-            "can_delete_record": is_manager(request.user) or is_supervisor(request.user),
+            "can_add_record": is_manager(request.user) or is_supervisor(request.user) or has_model_perm(request.user, slug, "add"),
+            "can_edit_record": is_manager(request.user) or is_supervisor(request.user) or has_model_perm(request.user, slug, "change"),
+            "can_delete_record": is_manager(request.user) or is_supervisor(request.user) or has_model_perm(request.user, slug, "delete"),
         },
     )
 
 
 @login_required
 def record_create(request, slug):
-    if not can_manage_slug(request.user, slug):
+    if not (is_manager(request.user) or is_supervisor(request.user) or has_model_perm(request.user, slug, "add")):
         return HttpResponseForbidden("You do not have permission to add this record.")
     if slug == "guard-schedules":
         messages.info(request, "Guard schedules are managed from the attendance screen.")
@@ -2264,7 +2313,7 @@ def record_create(request, slug):
 
 @login_required
 def record_update(request, slug, pk):
-    if not can_manage_slug(request.user, slug):
+    if not (is_manager(request.user) or is_supervisor(request.user) or has_model_perm(request.user, slug, "change")):
         return HttpResponseForbidden("You do not have permission to edit this record.")
     if slug == "guard-schedules":
         messages.info(request, "Guard schedules are managed from the attendance screen.")
@@ -2289,7 +2338,7 @@ def record_update(request, slug, pk):
 
 @login_required
 def record_delete(request, slug, pk):
-    if not can_manage_slug(request.user, slug):
+    if not (is_manager(request.user) or is_supervisor(request.user) or has_model_perm(request.user, slug, "delete")):
         return HttpResponseForbidden("You do not have permission to delete this record.")
     if slug == "guard-schedules":
         messages.info(request, "Guard schedules are managed from the attendance screen.")

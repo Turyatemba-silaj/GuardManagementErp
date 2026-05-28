@@ -19,13 +19,14 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.staticfiles.views import serve as serve_static
 from django.urls import include, path, re_path
-from core.auth_views import DatabaseSafeLoginView
+from core.auth_views import DatabaseSafeLoginView, HomeRedirectAdminLoginView
 
 urlpatterns = [
     re_path(r"^static/(?P<path>.*)$", serve_static, name="static"),
     path('', include('core.urls')),
     path('accounts/login/', DatabaseSafeLoginView.as_view(), name='login'),
     path('accounts/', include('django.contrib.auth.urls')),
+    path('admin/login/', HomeRedirectAdminLoginView.as_view(), name='admin_login'),
     path('admin/', admin.site.urls),
 ]
 

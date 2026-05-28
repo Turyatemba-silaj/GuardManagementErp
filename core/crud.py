@@ -13,7 +13,22 @@ class ModelConfig:
 
 MODEL_REGISTRY = {
     "clients": ModelConfig(models.Client, "Clients", "Operations", ("client_name", "contact_person", "phone_number", "contract_status")),
-    "contracts": ModelConfig(models.Contract, "Contracts", "Operations", ("contract_number", "client", "service_type", "required_guards", "start_date", "end_date", "billing_rate", "status")),
+    "contracts": ModelConfig(
+        models.Contract,
+        "Contracts",
+        "Operations",
+        (
+            "contract_number",
+            "client",
+            "service_type",
+            "required_guards",
+            "other_deliverables",
+            "start_date",
+            "end_date",
+            "billing_rate",
+            "status",
+        ),
+    ),
     "contract-site-requirements": ModelConfig(
         models.ContractSiteRequirement,
         "Contract Site Requirements",
@@ -29,6 +44,8 @@ MODEL_REGISTRY = {
             "metal_detector_count",
             "walk_through_machine_count",
             "dog_count",
+            "panic_baton_count",
+            "handcuffs_count",
             "start_date",
             "end_date",
             "status",

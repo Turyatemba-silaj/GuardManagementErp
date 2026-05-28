@@ -14,7 +14,7 @@
         gap: 20px;
         align-items: start;
         background:
-            linear-gradient(135deg, rgba(22, 163, 74, .12), rgba(37, 99, 235, .08) 56%, rgba(245, 158, 11, .1)),
+            linear-gradient(135deg, rgba(96, 165, 250, .18), rgba(37, 99, 235, .08) 56%, rgba(96, 165, 250, .14)),
             #fff;
     }
     .dashboard-title {
@@ -31,10 +31,10 @@
         align-items: center;
         gap: 8px;
         padding: 6px 10px;
-        border: 1px solid #bbf7d0;
+        border: 1px solid #bfdbfe;
         border-radius: 999px;
-        background: #ecfdf3;
-        color: #166534;
+        background: #eff6ff;
+        color: #1d4ed8;
         font-size: 12px;
         font-weight: 800;
         text-transform: uppercase;
@@ -98,9 +98,9 @@
     }
     .metric-card:nth-child(2) { border-top-color: var(--sentinel-blue); }
     .metric-card:nth-child(3) { border-top-color: var(--sentinel-amber); }
-    .metric-card:nth-child(4) { border-top-color: #7c3aed; }
+    .metric-card:nth-child(4) { border-top-color: #2563eb; }
     .metric-card:nth-child(5) { border-top-color: var(--sentinel-red); }
-    .metric-card:nth-child(6) { border-top-color: #0891b2; }
+    .metric-card:nth-child(6) { border-top-color: #2563eb; }
     .metric-card i {
         width: 36px;
         height: 36px;
@@ -108,8 +108,8 @@
         align-items: center;
         justify-content: center;
         border-radius: 8px;
-        color: #166534;
-        background: #ecfdf3;
+        color: #1d4ed8;
+        background: #eff6ff;
         flex: 0 0 auto;
     }
     .metric-card strong {
@@ -387,7 +387,7 @@
             return;
         }
         var data = JSON.parse(chartElement.textContent);
-        var palette = ["#16a34a", "#2563eb", "#f59e0b", "#667085", "#dc2626", "#0891b2"];
+        var palette = ["#2563eb", "#2563eb", "#2563eb", "#667085", "#2563eb", "#2563eb"];
         var gridColor = "rgba(102, 112, 133, .18)";
         var labelColor = "#243244";
 
@@ -470,9 +470,9 @@
             }
         });
 
-        makeBarChart("operationsGraph", data.operationsLabels, data.operationsValues, "Records", "#16a34a");
+        makeBarChart("operationsGraph", data.operationsLabels, data.operationsValues, "Records", "#2563eb");
         makeBarChart("hrGraph", data.hrLabels, data.hrValues, "Records", "#2563eb");
-        makeBarChart("financeGraph", data.financeLabels, data.financeValues, "Records", "#f59e0b");
+        makeBarChart("financeGraph", data.financeLabels, data.financeValues, "Records", "#2563eb");
 
         new Chart(document.getElementById("cumulativeBar"), {
             type: "bar",
@@ -481,7 +481,7 @@
                 datasets: [{
                     label: "Cumulative records",
                     data: data.cumulativeValues,
-                    backgroundColor: ["#16a34a", "#2563eb", "#f59e0b"],
+                    backgroundColor: ["#2563eb", "#2563eb", "#2563eb"],
                     borderRadius: 4,
                     maxBarThickness: 38
                 }]

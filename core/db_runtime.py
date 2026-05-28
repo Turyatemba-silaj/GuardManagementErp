@@ -36,7 +36,9 @@ def ensure_writable_sqlite_database():
 
     writable_path = Path(os.environ.get("DJANGO_SQLITE_TMP_NAME", "/tmp/erp.sqlite3"))
     writable_path.parent.mkdir(parents=True, exist_ok=True)
-    if current_path and current_path.exists() and not writable_path.exists():
+    if current_path and current_path.exists() and (
+        not writable_path.exists() or current_path.stat().st_mtime > writable_path.stat().st_mtime
+    ):
         shutil.copy2(current_path, writable_path)
 
     settings.DATABASES["default"]["NAME"] = str(writable_path)

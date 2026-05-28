@@ -98,7 +98,9 @@ def sqlite_runtime_config(config):
             configured_db = Path(configured_name)
             if configured_db.exists():
                 bundled_db = configured_db
-        if bundled_db.exists() and not writable_db.exists():
+        if bundled_db.exists() and (
+            not writable_db.exists() or bundled_db.stat().st_mtime > writable_db.stat().st_mtime
+        ):
             shutil.copy2(bundled_db, writable_db)
         DATABASE_RUNTIME_NOTE = (
             "Using writable /tmp SQLite fallback for Vercel. "
@@ -404,14 +406,14 @@ JAZZMIN_UI_TWEAKS = {
     "footer_small_text": True,
     "theme": "litera",
     "default_theme_mode": "light",
-    "accent": "accent-success",
+    "accent": "accent-primary",
     "button_classes": {
         "primary": "btn-primary",
         "secondary": "btn-outline-secondary",
         "info": "btn-info",
-        "warning": "btn-warning",
-        "danger": "btn-danger",
-        "success": "btn-success",
+        "warning": "btn-primary",
+        "danger": "btn-primary",
+        "success": "btn-primary",
     },
 }
 

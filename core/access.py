@@ -37,8 +37,23 @@ def is_supervisor(user):
 
 def can_access_internal(user):
     return user.is_authenticated and (
-        user.is_staff or is_manager(user) or is_supervisor(user) or in_group(user, GUARD_GROUP)
+        user.is_staff or is_manager(user) or is_supervisor(user) or in_group(user, GUARD_GROUP) or bool(user.get_all_permissions())
     )
+
+
+def has_model_perm(user, slug, action):
+    if not user.is_authenticated:
+        return False
+    try:
+        from .crud import MODEL_REGISTRY
+
+        config = MODEL_REGISTRY.get(slug)
+        if not config:
+            return False
+        opts = config.model._meta
+        return user.has_perm(f"{opts.app_label}.{action}_{opts.model_name}")
+    except Exception:
+        return False
 
 
 def can_manage_slug(user, slug):
@@ -46,7 +61,7 @@ def can_manage_slug(user, slug):
         return True
     if is_supervisor(user):
         return slug in SUPERVISOR_ALLOWED_SLUGS
-    return False
+    return any(has_model_perm(user, slug, action) for action in ("view", "add", "change", "delete"))
 
 
 def supervisor_profile_for(user):

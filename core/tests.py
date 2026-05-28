@@ -5,7 +5,8 @@ from pathlib import Path
 import tempfile
 from unittest.mock import patch
 
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import Group, Permission, User
+from django.contrib.auth import authenticate
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -52,6 +53,7 @@ from .models import (
 from .accounting import ensure_default_accounts, post_all_accounting, post_invoice, post_salary
 from .crud import MODEL_REGISTRY
 from .db_runtime import ensure_writable_sqlite_database
+from .forms import ContractForm, ContractSiteRequirementForm
 import security_management.settings as project_settings
 
 
@@ -93,6 +95,194 @@ class DatabaseRuntimeTests(TestCase):
         self.assertEqual(Path(config["NAME"]), writable_db)
 
 
+class EnvSuperuserBackendTests(TestCase):
+    def test_env_superuser_is_created_when_credentials_match(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DJANGO_SUPERUSER_USERNAME": "deploy-admin",
+                "DJANGO_SUPERUSER_PASSWORD": "temporary-pass",
+                "DJANGO_SUPERUSER_EMAIL": "admin@example.com",
+            },
+            clear=False,
+        ):
+            user = authenticate(username="deploy-admin", password="temporary-pass")
+
+        self.assertIsNotNone(user)
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
+        self.assertTrue(user.check_password("temporary-pass"))
+
+    def test_env_superuser_can_login_with_configured_email(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DJANGO_SUPERUSER_USERNAME": "deploy-admin",
+                "DJANGO_SUPERUSER_PASSWORD": "temporary-pass",
+                "DJANGO_SUPERUSER_EMAIL": "admin@example.com",
+            },
+            clear=False,
+        ):
+            user = authenticate(username="admin@example.com", password="temporary-pass")
+
+        self.assertIsNotNone(user)
+        self.assertEqual(user.username, "deploy-admin")
+
+    @override_settings(DISABLE_LAST_LOGIN_UPDATE=True, SESSION_ENGINE="django.contrib.sessions.backends.signed_cookies")
+    def test_login_view_succeeds_when_database_login_writes_are_disabled(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DJANGO_SUPERUSER_USERNAME": "deploy-admin",
+                "DJANGO_SUPERUSER_PASSWORD": "temporary-pass",
+            },
+            clear=False,
+        ):
+            response = self.client.post(
+                reverse("login"),
+                {"username": "deploy-admin", "password": "temporary-pass"},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], settings.LOGIN_REDIRECT_URL)
+        self.assertIn("sessionid", self.client.cookies)
+
+
+class AdminLoginRedirectTests(TestCase):
+    def test_admin_login_redirects_to_dashboard_after_success(self):
+        User.objects.create_user(
+            username="staff-admin",
+            password="temporary-pass",
+            is_active=True,
+            is_staff=True,
+        )
+
+        response = self.client.post(
+            "/admin/login/?next=/admin/",
+            {"username": "staff-admin", "password": "temporary-pass", "next": "/admin/"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], settings.LOGIN_REDIRECT_URL)
+        self.assertIn("sessionid", self.client.cookies)
+
+
+class ContractDeliverableFormTests(TestCase):
+    def setUp(self):
+        self.client_record = Client.objects.create(
+            client_name="Deliverable Client",
+            contact_person="A",
+            phone_number="0700000100",
+            contract_start_date="2026-01-01",
+        )
+        self.base_data = {
+            "client": self.client_record.pk,
+            "start_date": "2026-01-01",
+            "billing_rate": "1000.00",
+            "status": StatusChoices.ACTIVE,
+        }
+
+    def test_other_contract_service_stores_deliverables(self):
+        form = ContractForm(
+            data={
+                **self.base_data,
+                "contract_number": "OTH-DEL-001",
+                "service_type": Contract.ServiceType.OTHERS,
+                "dog_count": "2",
+                "dog_rate": "100.00",
+                "metal_detector_count": "3",
+                "metal_detector_rate": "200.00",
+                "walk_through_detector_count": "1",
+                "walk_through_detector_rate": "300.00",
+                "panic_baton_count": "4",
+                "panic_baton_rate": "50.00",
+                "handcuffs_count": "5",
+                "handcuffs_rate": "25.00",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        contract = form.save()
+
+        self.assertEqual(
+            contract.other_deliverables,
+            "Dogs: 2 @ 100.00, Metal detectors: 3 @ 200.00, Walk through detectors: 1 @ 300.00, Panic batons: 4 @ 50.00, Handcuffs: 5 @ 25.00",
+        )
+
+    def test_non_other_contract_service_zeros_deliverables(self):
+        form = ContractForm(
+            data={
+                **self.base_data,
+                "contract_number": "MANNED-DEL-001",
+                "service_type": Contract.ServiceType.MANNED_GUARDING,
+                "dog_count": "9",
+                "dog_rate": "100.00",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        contract = form.save()
+
+        self.assertEqual(contract.dog_count, 0)
+        self.assertEqual(contract.dog_rate, 0)
+        self.assertEqual(contract.other_deliverables, "-")
+
+
+class ContractSiteRequirementFormTests(TestCase):
+    def test_requirement_creates_site_code_and_pulls_contract_deliverables(self):
+        client = Client.objects.create(
+            client_name="Requirement Client",
+            contact_person="A",
+            phone_number="0700000101",
+            contract_start_date="2026-01-01",
+        )
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="REQ-DATA-001",
+            service_type=Contract.ServiceType.OTHERS,
+            start_date="2026-02-01",
+            end_date="2026-12-31",
+            billing_rate=Decimal("150000.00"),
+            dog_count=2,
+            dog_rate=Decimal("10000.00"),
+            metal_detector_count=3,
+            metal_detector_rate=Decimal("20000.00"),
+            walk_through_detector_count=1,
+            walk_through_detector_rate=Decimal("30000.00"),
+            panic_baton_count=4,
+            panic_baton_rate=Decimal("5000.00"),
+            handcuffs_count=5,
+            handcuffs_rate=Decimal("2500.00"),
+        )
+
+        form = ContractSiteRequirementForm(
+            data={
+                "client": client.pk,
+                "contract": contract.pk,
+                "site_name": "Main Gate",
+                "site_address": "Plot 1",
+                "city": "Kampala",
+                "required_guards": "6",
+                "status": StatusChoices.ACTIVE,
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        requirement = form.save()
+
+        self.assertEqual(requirement.site.site_code, "RCXXS0001")
+        self.assertEqual(requirement.rate_per_guard, Decimal("150000.00"))
+        self.assertEqual(requirement.start_date.isoformat(), "2026-02-01")
+        self.assertEqual(requirement.end_date.isoformat(), "2026-12-31")
+        self.assertEqual(requirement.dog_count, 2)
+        self.assertEqual(requirement.dog_rate, Decimal("10000.00"))
+        self.assertEqual(requirement.metal_detector_count, 3)
+        self.assertEqual(requirement.walk_through_machine_count, 1)
+        self.assertEqual(requirement.panic_baton_count, 4)
+        self.assertEqual(requirement.handcuffs_count, 5)
+
+
 class AdminRolePermissionTests(TestCase):
     def setUp(self):
         self.admin_user = User.objects.create_user(
@@ -117,14 +307,16 @@ class AdminRolePermissionTests(TestCase):
         self.assertContains(response, "Create user")
         self.assertContains(response, "Role assignment")
 
-    def test_user_change_form_uses_roles_instead_of_raw_permission_wall(self):
+    def test_user_change_form_allows_roles_and_direct_permissions(self):
         target = User.objects.create_user(username="new-operator", password="pass", is_staff=True)
 
         response = self.client.get(reverse("admin:auth_user_change", args=[target.pk]))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Role assignment")
-        self.assertNotContains(response, "User permissions")
+        self.assertContains(response, "Direct permissions")
+        self.assertContains(response, "User permissions")
+        self.assertContains(response, "Superuser status")
 
 
 class FinanceCalculationTests(TestCase):
@@ -1548,6 +1740,18 @@ class ZoneAuthorizationTests(TestCase):
         response = self.client.get("/records/clients/")
 
         self.assertEqual(response.status_code, 200)
+
+    def test_user_with_direct_permission_can_login_and_view_permitted_module(self):
+        user = User.objects.create_user(username="client-viewer", password="pass")
+        permission = Permission.objects.get(codename="view_client")
+        user.user_permissions.add(permission)
+        self.client.login(username="client-viewer", password="pass")
+
+        dashboard_response = self.client.get("/dashboard/")
+        records_response = self.client.get("/records/clients/")
+
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertEqual(records_response.status_code, 200)
 
     def test_manager_can_access_every_module(self):
         user = User.objects.create_user(username="manager", password="pass")

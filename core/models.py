@@ -140,13 +140,34 @@ class Site(TimeStampedModel):
 
 
 class Contract(TimeStampedModel):
+    class ServiceType(models.TextChoices):
+        MANNED_GUARDING = "Manned Guarding", "Manned Guarding"
+        SITE_SUPERVISION = "Site Supervision", "Site Supervision"
+        INCIDENT_MANAGEMENT = "Incident Management", "Incident Management"
+        WORKFORCE_CONTROL = "Workforce Control", "Workforce Control"
+        OTHERS = "Others", "Others"
+
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="contracts")
     contract_number = models.CharField(max_length=80, unique=True)
-    service_type = models.CharField(max_length=120, default="Manned Guarding")
+    service_type = models.CharField(
+        max_length=120,
+        choices=ServiceType.choices,
+        default=ServiceType.MANNED_GUARDING,
+    )
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     billing_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.ACTIVE)
+    dog_count = models.PositiveIntegerField(default=0)
+    dog_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    metal_detector_count = models.PositiveIntegerField(default=0)
+    metal_detector_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    walk_through_detector_count = models.PositiveIntegerField(default=0)
+    walk_through_detector_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    panic_baton_count = models.PositiveIntegerField(default=0)
+    panic_baton_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    handcuffs_count = models.PositiveIntegerField(default=0)
+    handcuffs_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     terms = models.TextField(blank=True)
 
     class Meta:
@@ -161,6 +182,22 @@ class Contract(TimeStampedModel):
             requirement.required_guards
             for requirement in self.site_requirements.filter(status=StatusChoices.ACTIVE)
         )
+
+    @property
+    def other_deliverables(self):
+        items = [
+            ("Dogs", self.dog_count, self.dog_rate),
+            ("Metal detectors", self.metal_detector_count, self.metal_detector_rate),
+            ("Walk through detectors", self.walk_through_detector_count, self.walk_through_detector_rate),
+            ("Panic batons", self.panic_baton_count, self.panic_baton_rate),
+            ("Handcuffs", self.handcuffs_count, self.handcuffs_rate),
+        ]
+        deliverables = [
+            f"{label}: {count} @ {rate}"
+            for label, count, rate in items
+            if count
+        ]
+        return ", ".join(deliverables) if deliverables else "-"
 
 
 class ContractSiteRequirement(TimeStampedModel):
@@ -184,6 +221,10 @@ class ContractSiteRequirement(TimeStampedModel):
     walk_through_machine_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     dog_count = models.PositiveIntegerField(default=0)
     dog_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    panic_baton_count = models.PositiveIntegerField(default=0)
+    panic_baton_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    handcuffs_count = models.PositiveIntegerField(default=0)
+    handcuffs_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.ACTIVE)
@@ -219,6 +260,8 @@ class ContractSiteRequirement(TimeStampedModel):
             + (Decimal(self.metal_detector_count) * self.metal_detector_rate)
             + (Decimal(self.walk_through_machine_count) * self.walk_through_machine_rate)
             + (Decimal(self.dog_count) * self.dog_rate)
+            + (Decimal(self.panic_baton_count) * self.panic_baton_rate)
+            + (Decimal(self.handcuffs_count) * self.handcuffs_rate)
         ).quantize(Decimal("0.01"))
 
     def save(self, *args, **kwargs):

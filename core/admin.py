@@ -8,9 +8,9 @@ from django.contrib.auth.models import Group
 from . import models
 
 
-admin.site.site_header = "Sentinel ERP Administration"
-admin.site.site_title = "Sentinel ERP"
-admin.site.index_title = "ERP Control Center"
+admin.site.site_header = "System Admin"
+admin.site.site_title = "System Admin"
+admin.site.index_title = "System Admin"
 
 User = get_user_model()
 
@@ -24,10 +24,10 @@ for auth_model in (User, Group):
 @admin.register(User)
 class SentinelUserAdmin(DjangoUserAdmin):
     list_display = ("username", "full_name", "email", "role_groups", "is_staff", "is_active", "last_login")
-    list_filter = ("is_active", "is_staff", "groups")
+    list_filter = ("is_active", "is_staff", "is_superuser", "groups")
     search_fields = ("username", "first_name", "last_name", "email")
     ordering = ("username",)
-    filter_horizontal = ("groups",)
+    filter_horizontal = ("groups", "user_permissions")
     readonly_fields = ("last_login", "date_joined")
     save_on_top = True
 
@@ -35,7 +35,8 @@ class SentinelUserAdmin(DjangoUserAdmin):
         ("Account", {"fields": ("username", "password")}),
         ("Personal details", {"fields": ("first_name", "last_name", "email")}),
         ("Role assignment", {"fields": ("groups",), "description": "Assign one or more ERP roles. Role permissions are managed under Groups."}),
-        ("Access status", {"fields": ("is_active", "is_staff")}),
+        ("Direct permissions", {"fields": ("user_permissions",), "description": "Assign permissions that apply only to this user."}),
+        ("Access status", {"fields": ("is_active", "is_staff", "is_superuser")}),
         ("Important dates", {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (
@@ -47,7 +48,8 @@ class SentinelUserAdmin(DjangoUserAdmin):
             },
         ),
         ("Role assignment", {"fields": ("groups",)}),
-        ("Access status", {"fields": ("is_active", "is_staff")}),
+        ("Direct permissions", {"fields": ("user_permissions",)}),
+        ("Access status", {"fields": ("is_active", "is_staff", "is_superuser")}),
     )
 
     @admin.display(description="Name")
@@ -62,9 +64,11 @@ class SentinelUserAdmin(DjangoUserAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related("groups")
 
-    def save_model(self, request, obj, form, change):
-        obj.is_superuser = False
-        super().save_model(request, obj, form, change)
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        initial.setdefault("is_active", True)
+        initial.setdefault("is_staff", True)
+        return initial
 
 
 @admin.register(Group)
@@ -91,7 +95,17 @@ class ClientAdmin(admin.ModelAdmin):
 
 @admin.register(models.Contract)
 class ContractAdmin(admin.ModelAdmin):
-    list_display = ("contract_number", "client", "service_type", "required_guards", "start_date", "end_date", "billing_rate", "status")
+    list_display = (
+        "contract_number",
+        "client",
+        "service_type",
+        "required_guards",
+        "other_deliverables",
+        "start_date",
+        "end_date",
+        "billing_rate",
+        "status",
+    )
     list_filter = ("status", "service_type")
     search_fields = ("contract_number", "client__client_name", "terms")
     date_hierarchy = "start_date"
@@ -107,6 +121,11 @@ class ContractSiteRequirementAdmin(admin.ModelAdmin):
         "billing_rate",
         "gun_count",
         "radio_count",
+        "metal_detector_count",
+        "walk_through_machine_count",
+        "dog_count",
+        "panic_baton_count",
+        "handcuffs_count",
         "billable_total",
         "start_date",
         "end_date",

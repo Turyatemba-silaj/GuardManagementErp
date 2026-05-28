@@ -1,21 +1,22 @@
+{% load static %}
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sentinel Shield Security Company</title>
+    <title>Delta Seal Security Company</title>
     <style>
         :root {
-            --ink: #132238;
-            --muted: #687588;
-            --line: #dde5ee;
+            --ink: #121826;
+            --muted: #647184;
             --paper: #ffffff;
-            --mist: #f4f7fb;
-            --navy: #10243f;
-            --steel: #44647e;
-            --teal: #168a86;
-            --gold: #c28a35;
-            --green: #176b4d;
+            --mist: #f3f6f9;
+            --line: #d8e0ea;
+            --navy: #0d1b2f;
+            --green: #2563eb;
+            --amber: #2563eb;
+            --red: #2563eb;
+            --blue: #2467a6;
         }
         * { box-sizing: border-box; }
         html { scroll-behavior: smooth; }
@@ -23,112 +24,116 @@
             margin: 0;
             color: var(--ink);
             background: var(--mist);
-            font-family: Arial, Helvetica, sans-serif;
-            line-height: 1.55;
+            font-family: Inter, "Segoe UI", Arial, sans-serif;
+            line-height: 1.5;
         }
         a { color: inherit; }
+        img { max-width: 100%; display: block; }
         .site-header {
             position: sticky;
             top: 0;
-            z-index: 10;
-            background: rgba(255,255,255,.94);
-            border-bottom: 1px solid var(--line);
-            backdrop-filter: blur(12px);
+            z-index: 20;
+            border-bottom: 1px solid rgba(255,255,255,.18);
+            background: rgba(13, 27, 47, .9);
+            color: #fff;
+            backdrop-filter: blur(14px);
         }
         .nav {
             width: min(1180px, calc(100% - 32px));
-            min-height: 72px;
+            min-height: 68px;
             margin: 0 auto;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 20px;
+            gap: 18px;
         }
         .brand {
-            display: flex;
+            display: inline-flex;
             align-items: center;
             gap: 11px;
+            color: #fff;
             text-decoration: none;
-            font-weight: 800;
-            color: var(--navy);
+            font-weight: 850;
         }
-        .mark {
-            width: 42px;
-            height: 42px;
-            border-radius: 10px;
+        .brand-mark {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
             display: grid;
             place-items: center;
+            background: var(--green);
             color: #fff;
-            background: linear-gradient(135deg, var(--navy), var(--teal));
-            font-size: 20px;
+            font-weight: 900;
         }
         .nav-links {
             display: flex;
             align-items: center;
-            gap: 18px;
-            flex-wrap: wrap;
             justify-content: flex-end;
+            gap: 16px;
+            flex-wrap: wrap;
         }
         .nav-links a {
+            color: #e7eef7;
             text-decoration: none;
-            color: var(--steel);
-            font-weight: 700;
+            font-weight: 750;
+            font-size: 14px;
         }
-        .portal-btn {
-            padding: 10px 14px;
+        .portal-link {
+            min-height: 40px;
+            display: inline-flex;
+            align-items: center;
+            padding: 9px 13px;
             border-radius: 6px;
-            background: var(--navy);
-            color: #fff !important;
+            background: #fff;
+            color: var(--navy) !important;
         }
         .hero {
-            background:
-                linear-gradient(90deg, rgba(16,36,63,.92), rgba(16,36,63,.72) 48%, rgba(16,36,63,.12)),
-                radial-gradient(circle at 80% 30%, rgba(22,138,134,.55), transparent 30%),
-                linear-gradient(135deg, #10243f, #253e58 45%, #edf4f7);
+            min-height: calc(100vh - 68px);
+            display: grid;
+            align-items: end;
             color: #fff;
+            background:
+                linear-gradient(90deg, rgba(7, 16, 30, .92) 0%, rgba(7, 16, 30, .7) 40%, rgba(7, 16, 30, .08) 74%),
+                url("{% static 'core/home/security-hero.png' %}") center / cover no-repeat;
         }
         .hero-inner {
             width: min(1180px, calc(100% - 32px));
-            min-height: 620px;
             margin: 0 auto;
-            display: grid;
-            grid-template-columns: minmax(0, 1.05fr) minmax(360px, .95fr);
-            align-items: center;
-            gap: 48px;
-            padding: 70px 0 54px;
+            padding: 96px 0 44px;
         }
         .eyebrow {
             display: inline-flex;
-            gap: 8px;
             align-items: center;
-            margin-bottom: 18px;
-            color: #d9ede9;
-            font-weight: 800;
-            letter-spacing: .04em;
-            text-transform: uppercase;
+            gap: 10px;
+            margin-bottom: 17px;
+            color: #dbeafe;
             font-size: 12px;
+            font-weight: 850;
+            letter-spacing: .08em;
+            text-transform: uppercase;
         }
         .eyebrow::before {
             content: "";
-            width: 36px;
-            height: 2px;
-            background: var(--gold);
+            width: 38px;
+            height: 3px;
+            border-radius: 99px;
+            background: var(--amber);
         }
         h1 {
+            max-width: 800px;
             margin: 0;
-            max-width: 780px;
-            font-size: clamp(40px, 7vw, 76px);
-            line-height: 1.02;
+            color: #fff;
+            font-size: clamp(42px, 7vw, 82px);
+            line-height: 1;
             letter-spacing: 0;
         }
         .hero-copy {
-            max-width: 620px;
-            margin: 20px 0 28px;
-            color: #e4ecf3;
+            max-width: 630px;
+            margin: 22px 0 28px;
+            color: #e4ebf3;
             font-size: 18px;
         }
-        .hero-actions,
-        .section-actions {
+        .actions {
             display: flex;
             gap: 12px;
             flex-wrap: wrap;
@@ -138,153 +143,162 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            gap: 8px;
             padding: 11px 16px;
             border-radius: 6px;
+            border: 1px solid transparent;
             text-decoration: none;
-            font-weight: 800;
+            font-weight: 850;
         }
-        .btn-primary { background: var(--teal); color: #fff; }
+        .btn-primary { background: var(--green); color: #fff; }
         .btn-light { background: #fff; color: var(--navy); }
-        .btn-outline { border: 1px solid rgba(255,255,255,.45); color: #fff; }
-        .visual {
-            min-height: 430px;
-            position: relative;
-            border: 1px solid rgba(255,255,255,.24);
-            border-radius: 18px;
-            overflow: hidden;
-            background:
-                linear-gradient(160deg, rgba(255,255,255,.12), rgba(255,255,255,.02)),
-                repeating-linear-gradient(90deg, rgba(255,255,255,.08) 0 1px, transparent 1px 80px);
-            box-shadow: 0 24px 70px rgba(0,0,0,.28);
+        .btn-outline { border-color: rgba(255,255,255,.52); color: #fff; }
+        .hero-strip {
+            width: min(1180px, calc(100% - 32px));
+            margin: 64px auto 0;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            border: 1px solid rgba(255,255,255,.18);
+            background: rgba(6, 15, 29, .7);
+            backdrop-filter: blur(12px);
         }
-        .visual::before {
-            content: "";
-            position: absolute;
-            inset: 32px;
-            border: 1px solid rgba(255,255,255,.25);
-            border-radius: 14px;
-        }
-        .guard-shape {
-            position: absolute;
-            right: 12%;
-            bottom: 0;
-            width: 190px;
-            height: 330px;
-            background: linear-gradient(#263b54, #0c1b2e);
-            border-radius: 88px 88px 18px 18px;
-        }
-        .guard-shape::before {
-            content: "";
-            position: absolute;
-            top: -56px;
-            left: 48px;
-            width: 92px;
-            height: 92px;
-            border-radius: 50%;
-            background: #c99866;
-            box-shadow: 0 -22px 0 -8px #182a41;
-        }
-        .camera {
-            position: absolute;
-            left: 44px;
-            top: 58px;
-            width: 124px;
-            height: 70px;
-            border-radius: 12px;
-            background: #e8eef3;
-            transform: rotate(-8deg);
-        }
-        .camera::before {
-            content: "";
-            position: absolute;
-            right: -40px;
-            top: 18px;
-            width: 48px;
-            height: 34px;
-            background: #b8c7d3;
-            clip-path: polygon(0 0, 100% 20%, 100% 80%, 0 100%);
-        }
-        .status-card {
-            position: absolute;
-            left: 40px;
-            bottom: 38px;
-            width: min(280px, calc(100% - 80px));
+        .hero-stat {
+            min-height: 104px;
             padding: 18px;
-            border-radius: 14px;
-            background: rgba(255,255,255,.94);
-            color: var(--ink);
+            border-right: 1px solid rgba(255,255,255,.14);
         }
-        .status-card strong { display: block; font-size: 28px; }
-        .status-card span { color: var(--muted); }
+        .hero-stat:last-child { border-right: 0; }
+        .hero-stat strong {
+            display: block;
+            color: #fff;
+            font-size: 28px;
+            line-height: 1.1;
+        }
+        .hero-stat span { color: #cbd6e2; }
         section {
             width: min(1180px, calc(100% - 32px));
             margin: 0 auto;
-            padding: 76px 0;
+            padding: 78px 0;
         }
         .section-head {
             display: flex;
             align-items: end;
             justify-content: space-between;
-            gap: 24px;
-            margin-bottom: 28px;
+            gap: 28px;
+            margin-bottom: 30px;
         }
         .section-head h2 {
             margin: 0;
-            font-size: clamp(28px, 4vw, 44px);
-            line-height: 1.1;
+            font-size: clamp(30px, 4vw, 50px);
+            line-height: 1.06;
+            letter-spacing: 0;
         }
         .section-head p {
-            max-width: 620px;
+            max-width: 600px;
             margin: 10px 0 0;
             color: var(--muted);
+            font-size: 16px;
         }
-        .stats,
-        .service-grid,
-        .profile-grid,
-        .contact-grid {
+        .gallery-layout {
             display: grid;
-            gap: 16px;
+            grid-template-columns: minmax(260px, .42fr) minmax(0, 1fr);
+            gap: 24px;
+            align-items: stretch;
         }
-        .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: -34px; }
-        .stat,
-        .service-card,
-        .profile-card,
-        .contact-card {
+        .photo-tabs {
+            display: grid;
+            gap: 10px;
+            align-content: start;
+        }
+        .photo-tab {
+            width: 100%;
+            min-height: 68px;
+            border: 1px solid var(--line);
+            border-left: 4px solid transparent;
+            background: #fff;
+            color: var(--ink);
+            padding: 14px 15px;
+            text-align: left;
+            font: inherit;
+            cursor: pointer;
+        }
+        .photo-tab strong { display: block; font-size: 16px; }
+        .photo-tab span { color: var(--muted); font-size: 13px; }
+        .photo-tab.is-active {
+            border-left-color: var(--green);
+            box-shadow: 0 12px 28px rgba(18,24,38,.08);
+        }
+        .gallery-stage {
+            min-height: 560px;
+            position: relative;
+            overflow: hidden;
+            background: #101827;
+        }
+        .gallery-photo {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transform: scale(1.03);
+            transition: opacity .34s ease, transform .5s ease;
+        }
+        .gallery-photo.is-active {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .gallery-photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .caption {
+            position: absolute;
+            left: 22px;
+            right: 22px;
+            bottom: 22px;
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 20px;
+            color: #fff;
+            background: linear-gradient(90deg, rgba(10,18,32,.88), rgba(10,18,32,.44));
+            border: 1px solid rgba(255,255,255,.16);
+        }
+        .caption h3 { margin: 0 0 6px; color: #fff; font-size: 23px; }
+        .caption p { margin: 0; color: #dce6f1; max-width: 640px; }
+        .badge {
+            flex: 0 0 auto;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: var(--amber);
+            color: #1b1205;
+            font-weight: 900;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .service-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+        }
+        .service-card {
             background: #fff;
             border: 1px solid var(--line);
-            border-radius: 12px;
-            padding: 22px;
+            overflow: hidden;
+            transition: transform .18s ease, box-shadow .18s ease;
         }
-        .stat strong {
-            display: block;
-            font-size: 30px;
-            color: var(--navy);
+        .service-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 18px 38px rgba(18,24,38,.12);
         }
-        .stat span { color: var(--muted); }
-        .service-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-        .service-card h3,
-        .profile-card h3,
-        .contact-card h3 {
-            margin: 0 0 10px;
-            font-size: 20px;
+        .service-card img {
+            width: 100%;
+            height: 220px;
+            object-fit: cover;
         }
-        .service-card p,
-        .profile-card p,
-        .contact-card p {
-            margin: 0;
-            color: var(--muted);
-        }
-        .icon {
-            width: 42px;
-            height: 42px;
-            border-radius: 10px;
-            display: grid;
-            place-items: center;
-            margin-bottom: 16px;
-            background: #e9f6f4;
-            color: var(--teal);
-            font-weight: 900;
-        }
+        .service-body { padding: 21px; }
+        .service-body h3 { margin: 0 0 9px; font-size: 21px; }
+        .service-body p { margin: 0; color: var(--muted); }
         .about-band {
             width: 100%;
             background: #fff;
@@ -292,61 +306,105 @@
         }
         .about-content {
             display: grid;
-            grid-template-columns: .9fr 1.1fr;
+            grid-template-columns: .95fr 1.05fr;
             gap: 34px;
             align-items: center;
         }
-        .about-panel {
-            min-height: 330px;
-            border-radius: 18px;
-            background:
-                linear-gradient(135deg, rgba(19,34,56,.92), rgba(22,138,134,.72)),
-                repeating-linear-gradient(0deg, rgba(255,255,255,.12) 0 1px, transparent 1px 46px);
-            color: #fff;
-            padding: 28px;
-            display: grid;
-            align-content: end;
+        .about-media {
+            min-height: 430px;
+            background: url("{% static 'core/home/control-room.png' %}") center / cover no-repeat;
         }
-        .about-panel strong { font-size: 38px; line-height: 1; }
-        .about-text h2 { font-size: clamp(28px, 4vw, 44px); margin: 0 0 16px; }
+        .about-text h2 {
+            margin: 0 0 15px;
+            font-size: clamp(30px, 4vw, 50px);
+            line-height: 1.06;
+        }
         .about-text p { color: var(--muted); margin: 0 0 14px; }
-        .profile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-        .contact-wrap {
-            background: var(--navy);
+        .pill-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 22px 0 26px;
+        }
+        .pill {
+            padding: 8px 10px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: var(--mist);
+            color: #344256;
+            font-weight: 750;
+            font-size: 13px;
+        }
+        .profile-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+        }
+        .profile-card {
+            min-height: 210px;
+            padding: 24px;
+            border: 1px solid var(--line);
+            background: #fff;
+        }
+        .profile-card h3 { margin: 0 0 10px; font-size: 22px; }
+        .profile-card p { margin: 0; color: var(--muted); }
+        .profile-kicker {
+            display: inline-flex;
+            margin-bottom: 18px;
+            padding: 7px 9px;
+            border-radius: 6px;
+            color: #fff;
+            font-weight: 850;
+            background: var(--blue);
+        }
+        .profile-card:nth-child(2) .profile-kicker { background: var(--green); }
+        .profile-card:nth-child(3) .profile-kicker { background: var(--red); }
+        .contact-band {
+            background:
+                linear-gradient(90deg, rgba(13,27,47,.94), rgba(13,27,47,.82)),
+                url("{% static 'core/home/night-patrol.png' %}") center / cover no-repeat;
             color: #fff;
         }
-        .contact-wrap section { padding: 70px 0; }
-        .contact-wrap .section-head p { color: #cdd8e2; }
-        .contact-grid { grid-template-columns: 1fr 1fr 1fr; }
-        .contact-card {
-            background: rgba(255,255,255,.08);
-            border-color: rgba(255,255,255,.16);
+        .contact-band .section-head h2 { color: #fff; }
+        .contact-band .section-head p { color: #d7e2ef; }
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
         }
-        .contact-card p { color: #dce7ef; }
+        .contact-item {
+            padding: 22px;
+            border: 1px solid rgba(255,255,255,.18);
+            background: rgba(255,255,255,.08);
+        }
+        .contact-item h3 { margin: 0 0 9px; color: #fff; }
+        .contact-item p { margin: 0; color: #dce6f1; }
         footer {
-            background: #0a1727;
-            color: #cdd8e2;
-            padding: 22px 0;
+            padding: 24px 0;
+            background: #07111f;
+            color: #cbd6e2;
         }
         .footer-inner {
             width: min(1180px, calc(100% - 32px));
             margin: 0 auto;
             display: flex;
             justify-content: space-between;
-            gap: 14px;
+            gap: 12px;
             flex-wrap: wrap;
         }
         @media (max-width: 960px) {
-            .hero-inner,
-            .about-content {
-                grid-template-columns: 1fr;
-            }
-            .stats,
+            .hero { min-height: auto; }
+            .hero-strip,
             .service-grid,
             .profile-grid,
             .contact-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+            .gallery-layout,
+            .about-content {
+                grid-template-columns: 1fr;
+            }
+            .gallery-stage { min-height: 460px; }
             .section-head {
                 align-items: flex-start;
                 flex-direction: column;
@@ -358,25 +416,26 @@
                 flex-direction: column;
                 padding: 14px 0;
             }
-            .nav-links {
-                justify-content: flex-start;
-                gap: 10px;
-            }
-            .hero-inner {
-                min-height: auto;
-                padding: 48px 0;
-            }
-            .visual { min-height: 340px; }
-            .stats,
+            .nav-links { justify-content: flex-start; gap: 11px; }
+            .hero-inner { padding: 66px 0 28px; }
+            .hero-strip,
             .service-grid,
             .profile-grid,
             .contact-grid {
                 grid-template-columns: 1fr;
             }
-            .hero-actions .btn,
-            .section-actions .btn {
-                width: 100%;
+            .hero-stat { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.14); }
+            .hero-stat:last-child { border-bottom: 0; }
+            .gallery-stage { min-height: 390px; }
+            .caption {
+                left: 12px;
+                right: 12px;
+                bottom: 12px;
+                align-items: flex-start;
+                flex-direction: column;
+                padding: 15px;
             }
+            .actions .btn { width: 100%; }
         }
     </style>
 </head>
@@ -384,135 +443,216 @@
     <header class="site-header">
         <nav class="nav">
             <a class="brand" href="/">
-                <span class="mark">S</span>
+                <span class="brand-mark">S</span>
                 <span>Sentinel Shield Security</span>
             </a>
             <div class="nav-links">
+                <a href="#operations">Operations</a>
                 <a href="#services">Services</a>
                 <a href="#about">About</a>
-                <a href="#profiles">Profiles</a>
                 <a href="#contact">Contact</a>
-                <a class="portal-btn" href="/dashboard/">Management Portal</a>
+                <a class="portal-link" href="/accounts/login/">Sign In</a>
             </div>
         </nav>
     </header>
 
     <main>
-        <div class="hero">
+        <section class="hero" aria-label="Sentinel Shield Security Company">
             <div class="hero-inner">
-                <div>
-                    <span class="eyebrow">Professional Security Management</span>
-                    <h1>Calm, visible protection for people, property, and operations.</h1>
-                    <p class="hero-copy">Sentinel Shield Security delivers disciplined guard deployment, site supervision, patrol reporting, and incident response supported by a modern management system.</p>
-                    <div class="hero-actions">
-                        <a class="btn btn-primary" href="#contact">Request Security Support</a>
-                        <a class="btn btn-outline" href="/dashboard/">Open Company Portal</a>
-                    </div>
+                <span class="eyebrow">Security Operations Administration</span>
+                <h1>Sentinel Shield Security Company</h1>
+                <p class="hero-copy">Professional guarding, access control, patrol supervision, CCTV monitoring, and ERP-backed workforce accountability for clients across Uganda.</p>
+                <div class="actions">
+                    <a class="btn btn-primary" href="/accounts/login/">Open Dashboard</a>
+                    <a class="btn btn-outline" href="#operations">View Security Photos</a>
                 </div>
-                <div class="visual" aria-label="Security guard and monitoring illustration">
-                    <div class="camera"></div>
-                    <div class="guard-shape"></div>
-                    <div class="status-card">
-                        <strong>On Duty</strong>
-                        <span>Guard roster, attendance, patrol, and incident records in one controlled workflow.</span>
-                    </div>
+                <div class="hero-strip">
+                    {% for value, label in profile_stats %}
+                        <div class="hero-stat">
+                            <strong>{{ value }}</strong>
+                            <span>{{ label }}</span>
+                        </div>
+                    {% endfor %}
                 </div>
             </div>
-        </div>
+        </section>
 
-        <section aria-label="Company highlights">
-            <div class="stats">
-                {% for value, label in profile_stats %}
-                    <article class="stat">
-                        <strong>{{ value }}</strong>
-                        <span>{{ label }}</span>
-                    </article>
-                {% endfor %}
+        <section id="operations">
+            <div class="section-head">
+                <div>
+                    <h2>Live Security Workflows</h2>
+                    <p>Explore the core security services visually. Select a workflow to preview how the company presents guarding, monitoring, access control, and night patrol operations.</p>
+                </div>
+            </div>
+
+            <div class="gallery-layout">
+                <div class="photo-tabs" aria-label="Security photo gallery controls">
+                    <button class="photo-tab is-active" type="button" data-photo="0">
+                        <strong>Front Desk Guarding</strong>
+                        <span>Visible protection at commercial entrances.</span>
+                    </button>
+                    <button class="photo-tab" type="button" data-photo="1">
+                        <strong>Control Room Monitoring</strong>
+                        <span>CCTV observation and dispatch control.</span>
+                    </button>
+                    <button class="photo-tab" type="button" data-photo="2">
+                        <strong>Gate Access Control</strong>
+                        <span>Visitor checks with digital attendance records.</span>
+                    </button>
+                    <button class="photo-tab" type="button" data-photo="3">
+                        <strong>Night Patrol Supervision</strong>
+                        <span>Perimeter checks with patrol reporting.</span>
+                    </button>
+                </div>
+
+                <div class="gallery-stage" aria-live="polite">
+                    <figure class="gallery-photo is-active">
+                        <img src="{% static 'core/home/security-hero.png' %}" alt="Uniformed security guards at a modern office entrance">
+                        <figcaption class="caption">
+                            <div>
+                                <h3>Front Desk Guarding</h3>
+                                <p>Uniformed guards, site reception control, radio communication, and a visible first layer of client protection.</p>
+                            </div>
+                            <span class="badge">On site</span>
+                        </figcaption>
+                    </figure>
+                    <figure class="gallery-photo">
+                        <img src="{% static 'core/home/control-room.png' %}" alt="Security control room with CCTV monitoring screens">
+                        <figcaption class="caption">
+                            <div>
+                                <h3>Control Room Monitoring</h3>
+                                <p>Centralized CCTV visibility, radio dispatch, incident notes, and supervisor coordination from one operating desk.</p>
+                            </div>
+                            <span class="badge">24/7</span>
+                        </figcaption>
+                    </figure>
+                    <figure class="gallery-photo">
+                        <img src="{% static 'core/home/access-gate.png' %}" alt="Security guard checking visitor access at a gated estate">
+                        <figcaption class="caption">
+                            <div>
+                                <h3>Gate Access Control</h3>
+                                <p>Friendly visitor handling, entry checks, digital rosters, and controlled estate or facility access.</p>
+                            </div>
+                            <span class="badge">Verified</span>
+                        </figcaption>
+                    </figure>
+                    <figure class="gallery-photo">
+                        <img src="{% static 'core/home/night-patrol.png' %}" alt="Security guards performing a night patrol at a warehouse">
+                        <figcaption class="caption">
+                            <div>
+                                <h3>Night Patrol Supervision</h3>
+                                <p>Disciplined perimeter checks, supervisor oversight, patrol logs, and reliable after-hours site coverage.</p>
+                            </div>
+                            <span class="badge">Patrol</span>
+                        </figcaption>
+                    </figure>
+                </div>
             </div>
         </section>
 
         <section id="services">
             <div class="section-head">
                 <div>
-                    <h2>Security services designed for daily control.</h2>
-                    <p>From deployment to payroll visibility, the company profile is built around practical security operations and clear accountability.</p>
+                    <h2>Security Services Built For Accountability</h2>
+                    <p>Photo-led operations backed by structured ERP records for clients, sites, deployments, guards, attendance, incidents, payroll, and finance.</p>
                 </div>
             </div>
             <div class="service-grid">
-                {% for service in services %}
-                    <article class="service-card">
-                        <div class="icon">{{ forloop.counter }}</div>
-                        <h3>{{ service.title }}</h3>
-                        <p>{{ service.text }}</p>
-                    </article>
-                {% endfor %}
+                <article class="service-card">
+                    <img src="{% static 'core/home/access-gate.png' %}" alt="Security guard managing access at a gate">
+                    <div class="service-body">
+                        <h3>Manned Guarding</h3>
+                        <p>Trained guards for offices, estates, schools, warehouses, retail sites, and gated communities.</p>
+                    </div>
+                </article>
+                <article class="service-card">
+                    <img src="{% static 'core/home/control-room.png' %}" alt="Control room operator monitoring cameras">
+                    <div class="service-body">
+                        <h3>Site Supervision</h3>
+                        <p>Supervisor-led deployment checks, radio control, handovers, patrol review, and accountability reports.</p>
+                    </div>
+                </article>
+                <article class="service-card">
+                    <img src="{% static 'core/home/night-patrol.png' %}" alt="Night patrol security team checking a perimeter">
+                    <div class="service-body">
+                        <h3>Incident Response</h3>
+                        <p>Structured reporting for incident type, severity, location, guard assignment, and follow-up status.</p>
+                    </div>
+                </article>
             </div>
         </section>
 
         <div class="about-band" id="about">
             <section class="about-content">
-                <div class="about-panel">
-                    <span>Company Profile</span>
-                    <strong>Reliable guards. Clear reporting. Better supervision.</strong>
-                </div>
+                <div class="about-media" role="img" aria-label="Security operations control room"></div>
                 <div class="about-text">
-                    <h2>About Us</h2>
-                    <p>Sentinel Shield Security is a professional security company focused on dependable guarding, organized site coverage, and fast incident visibility. We support clients who need a steady security presence without operational confusion.</p>
-                    <p>Our management approach connects clients, sites, guards, supervisors, shifts, patrol logs, attendance, training, payroll, and finance records so each department works from one trusted system.</p>
-                    <div class="section-actions">
-                        <a class="btn btn-primary" href="#profiles">View Profiles</a>
-                        <a class="btn btn-light" href="/attendances/">Roster Attendance</a>
+                    <h2>Reliable Guards. Clear Reporting. Better Supervision.</h2>
+                    <p>Sentinel Shield Security combines disciplined field teams with a management system that keeps operations, human resource, and finance records connected.</p>
+                    <p>Every shift can be linked to clients, sites, rosters, attendance, incidents, patrols, training records, payroll, invoices, and payments for cleaner oversight.</p>
+                    <div class="pill-row">
+                        <span class="pill">Guard Deployment</span>
+                        <span class="pill">Attendance Control</span>
+                        <span class="pill">Incident Logs</span>
+                        <span class="pill">Payroll Visibility</span>
+                    </div>
+                    <div class="actions">
+                        <a class="btn btn-primary" href="/accounts/login/">Sign In</a>
+                        <a class="btn btn-light" href="/dashboard/">Open Dashboard</a>
                     </div>
                 </div>
             </section>
         </div>
 
-        <section id="profiles">
+        <section>
             <div class="section-head">
                 <div>
-                    <h2>Company Profiles</h2>
-                    <p>Each team profile is aligned to a core part of the security operation.</p>
+                    <h2>Company Departments</h2>
+                    <p>The ERP portal supports the full company structure behind the security service.</p>
                 </div>
             </div>
             <div class="profile-grid">
                 <article class="profile-card">
-                    <div class="icon">O</div>
-                    <h3>Operations Department</h3>
-                    <p>Handles clients, sites, shifts, guard deployments, incidents, patrol logs, and asset assignment.</p>
+                    <span class="profile-kicker">Operations</span>
+                    <h3>Deploy and supervise guards</h3>
+                    <p>Manage clients, sites, shifts, deployments, incidents, patrol logs, assets, and attendance workflows.</p>
                 </article>
                 <article class="profile-card">
-                    <div class="icon">H</div>
-                    <h3>Human Resource Department</h3>
-                    <p>Maintains employee records, roles, guards, supervisors, attendance, leave, training, documents, and evaluations.</p>
+                    <span class="profile-kicker">Human Resource</span>
+                    <h3>Control workforce records</h3>
+                    <p>Track employees, guards, supervisors, training, leave, documents, disciplinary actions, and performance.</p>
                 </article>
                 <article class="profile-card">
-                    <div class="icon">F</div>
-                    <h3>Finance Department</h3>
-                    <p>Controls salaries, advances, invoices, payments, budgets, and expenses for cleaner business oversight.</p>
+                    <span class="profile-kicker">Finance</span>
+                    <h3>Monitor commercial activity</h3>
+                    <p>Connect salaries, advances, invoices, payments, budgets, expenses, ledgers, and reconciliation reports.</p>
                 </article>
             </div>
         </section>
 
-        <div class="contact-wrap" id="contact">
+        <div class="contact-band" id="contact">
             <section>
                 <div class="section-head">
                     <div>
-                        <h2>Contact Sentinel Shield Security</h2>
-                        <p>Reach us for guard deployment, site risk review, supervision setup, or a managed security operations system.</p>
+                        <h2>Request Security Support</h2>
+                        <p>Use the portal for internal operations, or contact the control desk for guard deployment and site assessment support.</p>
+                    </div>
+                    <div class="actions">
+                        <a class="btn btn-primary" href="/accounts/login/">Management Login</a>
+                        <a class="btn btn-outline" href="/admin/login/">Admin Login</a>
                     </div>
                 </div>
                 <div class="contact-grid">
-                    <article class="contact-card">
-                        <h3>Phone</h3>
+                    <article class="contact-item">
+                        <h3>Control Desk</h3>
                         <p>+256 700 000 000<br>+256 780 000 000</p>
                     </article>
-                    <article class="contact-card">
+                    <article class="contact-item">
                         <h3>Email</h3>
                         <p>info@sentinelshield.example<br>operations@sentinelshield.example</p>
                     </article>
-                    <article class="contact-card">
-                        <h3>Office</h3>
-                        <p>Kampala, Uganda<br>Available for client site assessments.</p>
+                    <article class="contact-item">
+                        <h3>Coverage</h3>
+                        <p>Kampala, Uganda<br>Client site assessments available.</p>
                     </article>
                 </div>
             </section>
@@ -525,5 +665,24 @@
             <span>Professional guarding, supervision, and security operations management.</span>
         </div>
     </footer>
+
+    <script>
+        const tabs = Array.from(document.querySelectorAll(".photo-tab"));
+        const photos = Array.from(document.querySelectorAll(".gallery-photo"));
+
+        function activatePhoto(index) {
+            tabs.forEach((tab, tabIndex) => {
+                tab.classList.toggle("is-active", tabIndex === index);
+                tab.setAttribute("aria-selected", tabIndex === index ? "true" : "false");
+            });
+            photos.forEach((photo, photoIndex) => {
+                photo.classList.toggle("is-active", photoIndex === index);
+            });
+        }
+
+        tabs.forEach((tab) => {
+            tab.addEventListener("click", () => activatePhoto(Number(tab.dataset.photo)));
+        });
+    </script>
 </body>
 </html>

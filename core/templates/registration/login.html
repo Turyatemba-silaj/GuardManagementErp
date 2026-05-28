@@ -13,7 +13,7 @@
     <form class="form-card" method="post" style="grid-template-columns: 1fr;">
         {% csrf_token %}
         {% if form.errors %}
-            <p style="color: #c93535;">Invalid username or password.</p>
+            <p style="color: #1d4ed8;">Invalid username or password.</p>
         {% endif %}
         <div class="field">
             {{ form.username.label_tag }}

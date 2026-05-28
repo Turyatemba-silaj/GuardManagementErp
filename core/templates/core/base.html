@@ -12,12 +12,12 @@
         :root {
             --sentinel-ink: #111827;
             --sentinel-ink-2: #1f2937;
-            --sentinel-rail: #0f172a;
-            --sentinel-rail-soft: #172036;
-            --sentinel-green: #16a34a;
+            --sentinel-rail: #0b3b78;
+            --sentinel-rail-soft: #0f4c9a;
+            --sentinel-green: #2563eb;
             --sentinel-blue: #2563eb;
-            --sentinel-amber: #f59e0b;
-            --sentinel-red: #dc2626;
+            --sentinel-amber: #2563eb;
+            --sentinel-red: #2563eb;
             --sentinel-line: #dde3ea;
             --sentinel-line-strong: #cbd5e1;
             --sentinel-text: #243244;
@@ -46,7 +46,7 @@
         }
         .left_col {
             background:
-                linear-gradient(180deg, rgba(22, 163, 74, .14), rgba(37, 99, 235, .04) 34%, transparent 64%),
+                linear-gradient(180deg, rgba(96, 165, 250, .24), rgba(14, 116, 144, .1) 38%, transparent 68%),
                 var(--sentinel-rail);
             color: #f8fafc;
             min-height: 100vh;
@@ -71,14 +71,14 @@
         .site_title i {
             width: 38px;
             height: 38px;
-            border: 1px solid rgba(134, 239, 172, .38);
+            border: 1px solid rgba(191, 219, 254, .42);
             border-radius: 10px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             font-size: 16px;
-            background: rgba(22, 163, 74, .18);
-            color: #86efac;
+            background: rgba(147, 197, 253, .22);
+            color: #bfdbfe;
         }
         .brand-kicker {
             display: block;
@@ -102,7 +102,7 @@
             display: inline-flex;
             align-items: center;
             gap: 7px;
-            color: #bbf7d0;
+            color: #dbeafe;
             font-size: 12px;
             font-weight: 700;
         }
@@ -111,8 +111,8 @@
             width: 8px;
             height: 8px;
             border-radius: 999px;
-            background: var(--sentinel-green);
-            box-shadow: 0 0 0 4px rgba(22, 163, 74, .16);
+            background: #60a5fa;
+            box-shadow: 0 0 0 4px rgba(96, 165, 250, .2);
         }
         .menu_section { padding: 12px 10px; }
         .menu_section + .menu_section { border-top: 1px solid rgba(255,255,255,.08); }
@@ -154,8 +154,8 @@
             color: #fff;
         }
         .side-menu a.active {
-            background: rgba(22, 163, 74, .16);
-            border-color: rgba(74, 222, 128, .3);
+            background: rgba(96, 165, 250, .22);
+            border-color: rgba(147, 197, 253, .42);
             color: #fff;
         }
         .side-menu a.active::before {
@@ -163,11 +163,11 @@
             width: 3px;
             height: 22px;
             border-radius: 999px;
-            background: var(--sentinel-green);
+            background: #60a5fa;
             position: absolute;
             left: -3px;
         }
-        .side-menu i { width: 18px; text-align: center; color: #93c5fd; }
+        .side-menu i { width: 18px; text-align: center; color: #bfdbfe; }
         .department-menu {
             display: grid;
             gap: 8px;
@@ -206,11 +206,11 @@
         .department-group[open] summary::after { transform: rotate(180deg); }
         .department-group summary > i {
             width: 18px;
-            color: #86efac;
+            color: #bfdbfe;
             text-align: center;
         }
         .department-group.is-active summary {
-            color: #bbf7d0;
+            color: #dbeafe;
         }
         .department-count {
             min-width: 24px;
@@ -250,8 +250,8 @@
             color: #fff;
         }
         .department-links a.active {
-            background: rgba(22, 163, 74, .16);
-            border-color: rgba(74, 222, 128, .28);
+            background: rgba(96, 165, 250, .22);
+            border-color: rgba(147, 197, 253, .42);
             color: #fff;
         }
         .department-links i {
@@ -308,8 +308,8 @@
             font-weight: 800;
             white-space: nowrap;
         }
-        .status-pill.is-green { color: #166534; background: #ecfdf3; border-color: #bbf7d0; }
-        .status-pill.is-amber { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+        .status-pill.is-green { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+        .status-pill.is-amber { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
         .status-pill.is-blue { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
         .nav-actions {
             display: flex;
@@ -363,12 +363,12 @@
         }
         .btn-primary { background: var(--sentinel-blue); border-color: var(--sentinel-blue); color: #fff; }
         .btn-success { background: var(--sentinel-green); border-color: var(--sentinel-green); color: #fff; }
-        .btn-danger { background: var(--danger); border-color: #d43f3a; color: #fff; }
+        .btn-danger { background: var(--danger); border-color: #2563eb; color: #fff; }
         .btn-light { background: #fff; border-color: var(--sentinel-line-strong); color: var(--sentinel-text); }
         .btn-warning {
-            background: #fef7ec;
+            background: #eff6ff;
             border-color: var(--warning);
-            color: #8a5a12;
+            color: #1d4ed8;
         }
         .messages {
             display: grid;
@@ -379,15 +379,15 @@
         }
         .messages li {
             padding: 10px 12px;
-            border: 1px solid #b7e2c8;
-            background: #ecfff3;
-            color: #116536;
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
             border-radius: 8px;
         }
         .messages li.error {
-            border-color: #efb2b2;
-            background: #fff0f0;
-            color: #9f2424;
+            border-color: #bfdbfe;
+            background: #eff6ff;
+            color: #1d4ed8;
         }
         .table-wrap { overflow-x: auto; }
         table {
@@ -557,8 +557,8 @@
         .show-btn,
         .save-btn,
         .add-link { border: 1px solid var(--sentinel-green); background: var(--sentinel-green); color: #fff; }
-        .edit-btn { border: 1px solid var(--warning); background: #fef7ec; color: #8a5a12; }
-        .delete-btn { border: 1px solid #d43f3a; background: var(--danger); color: #fff; }
+        .edit-btn { border: 1px solid var(--warning); background: #eff6ff; color: #1d4ed8; }
+        .delete-btn { border: 1px solid #2563eb; background: var(--danger); color: #fff; }
         .table-tools {
             justify-content: space-between;
             padding: 12px 16px;

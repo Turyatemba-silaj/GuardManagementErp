@@ -110,6 +110,52 @@
     }
 </style>
 {% endif %}
+{% if slug == "contracts" %}
+<style>
+    .contract-deliverable-field {
+        display: none;
+    }
+    .contract-deliverable-field.is-visible {
+        display: grid;
+    }
+</style>
+{% endif %}
+{% if slug == "contract-site-requirements" %}
+<style>
+    .contract-requirement-form {
+        grid-template-columns: 1fr;
+    }
+    .form-section {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        padding: 16px;
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        background: #fff;
+    }
+    .form-section h2 {
+        grid-column: 1 / -1;
+        font-size: 15px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--sentinel-line);
+    }
+    .field-generated_site_code input {
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-weight: 800;
+    }
+    .field-notes,
+    .field-site_address {
+        grid-column: 1 / -1;
+    }
+    @media (max-width: 720px) {
+        .form-section {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -154,22 +200,178 @@
             <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Back to {{ config.title }}</a>
         {% endif %}
     </div>
-    <form id="record-form" class="form-card {% if slug == 'employees' %}employee-form-card{% endif %}" method="post" enctype="multipart/form-data">
+    <form id="record-form" class="form-card {% if slug == 'employees' %}employee-form-card{% endif %}{% if slug == 'contract-site-requirements' %} contract-requirement-form{% endif %}" method="post" enctype="multipart/form-data">
         {% csrf_token %}
-        {% for field in form %}
-            {% if slug != "employees" or field.name != "passport_photo" %}
-                <div class="field">
-                    {{ field.label_tag }}
-                    {{ field }}
-                    {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
-                    {{ field.errors }}
-                </div>
-            {% endif %}
-        {% endfor %}
+        {% if slug == "contract-site-requirements" %}
+            {{ form.non_field_errors }}
+            <section class="form-section">
+                <h2>Client and Contract</h2>
+                <div class="field field-client">{{ form.client.label_tag }}{{ form.client }}{% if form.client.help_text %}<span class="helptext">{{ form.client.help_text }}</span>{% endif %}{{ form.client.errors }}</div>
+                <div class="field field-generated_site_code">{{ form.generated_site_code.label_tag }}{{ form.generated_site_code }}{% if form.generated_site_code.help_text %}<span class="helptext">{{ form.generated_site_code.help_text }}</span>{% endif %}{{ form.generated_site_code.errors }}</div>
+                <div class="field field-contract">{{ form.contract.label_tag }}{{ form.contract }}{% if form.contract.help_text %}<span class="helptext">{{ form.contract.help_text }}</span>{% endif %}{{ form.contract.errors }}</div>
+            </section>
+            <section class="form-section">
+                <h2>Site Details</h2>
+                <div class="field field-site_name">{{ form.site_name.label_tag }}{{ form.site_name }}{% if form.site_name.help_text %}<span class="helptext">{{ form.site_name.help_text }}</span>{% endif %}{{ form.site_name.errors }}</div>
+                <div class="field field-city">{{ form.city.label_tag }}{{ form.city }}{% if form.city.help_text %}<span class="helptext">{{ form.city.help_text }}</span>{% endif %}{{ form.city.errors }}</div>
+                <div class="field field-site_address">{{ form.site_address.label_tag }}{{ form.site_address }}{% if form.site_address.help_text %}<span class="helptext">{{ form.site_address.help_text }}</span>{% endif %}{{ form.site_address.errors }}</div>
+            </section>
+            <section class="form-section">
+                <h2>Requirement</h2>
+                <div class="field field-shift">{{ form.shift.label_tag }}{{ form.shift }}{% if form.shift.help_text %}<span class="helptext">{{ form.shift.help_text }}</span>{% endif %}{{ form.shift.errors }}</div>
+                <div class="field field-required_guards">{{ form.required_guards.label_tag }}{{ form.required_guards }}{% if form.required_guards.help_text %}<span class="helptext">{{ form.required_guards.help_text }}</span>{% endif %}{{ form.required_guards.errors }}</div>
+                <div class="field field-rate_per_guard">{{ form.rate_per_guard.label_tag }}{{ form.rate_per_guard }}{% if form.rate_per_guard.help_text %}<span class="helptext">{{ form.rate_per_guard.help_text }}</span>{% endif %}{{ form.rate_per_guard.errors }}</div>
+            </section>
+            <section class="form-section">
+                <h2>Deliverables From Contract</h2>
+                <div class="field field-gun_count">{{ form.gun_count.label_tag }}{{ form.gun_count }}{{ form.gun_count.errors }}</div>
+                <div class="field field-gun_rate">{{ form.gun_rate.label_tag }}{{ form.gun_rate }}{{ form.gun_rate.errors }}</div>
+                <div class="field field-radio_count">{{ form.radio_count.label_tag }}{{ form.radio_count }}{{ form.radio_count.errors }}</div>
+                <div class="field field-radio_rate">{{ form.radio_rate.label_tag }}{{ form.radio_rate }}{{ form.radio_rate.errors }}</div>
+                <div class="field field-metal_detector_count">{{ form.metal_detector_count.label_tag }}{{ form.metal_detector_count }}{{ form.metal_detector_count.errors }}</div>
+                <div class="field field-metal_detector_rate">{{ form.metal_detector_rate.label_tag }}{{ form.metal_detector_rate }}{{ form.metal_detector_rate.errors }}</div>
+                <div class="field field-walk_through_machine_count">{{ form.walk_through_machine_count.label_tag }}{{ form.walk_through_machine_count }}{{ form.walk_through_machine_count.errors }}</div>
+                <div class="field field-walk_through_machine_rate">{{ form.walk_through_machine_rate.label_tag }}{{ form.walk_through_machine_rate }}{{ form.walk_through_machine_rate.errors }}</div>
+                <div class="field field-dog_count">{{ form.dog_count.label_tag }}{{ form.dog_count }}{{ form.dog_count.errors }}</div>
+                <div class="field field-dog_rate">{{ form.dog_rate.label_tag }}{{ form.dog_rate }}{{ form.dog_rate.errors }}</div>
+                <div class="field field-panic_baton_count">{{ form.panic_baton_count.label_tag }}{{ form.panic_baton_count }}{{ form.panic_baton_count.errors }}</div>
+                <div class="field field-panic_baton_rate">{{ form.panic_baton_rate.label_tag }}{{ form.panic_baton_rate }}{{ form.panic_baton_rate.errors }}</div>
+                <div class="field field-handcuffs_count">{{ form.handcuffs_count.label_tag }}{{ form.handcuffs_count }}{{ form.handcuffs_count.errors }}</div>
+                <div class="field field-handcuffs_rate">{{ form.handcuffs_rate.label_tag }}{{ form.handcuffs_rate }}{{ form.handcuffs_rate.errors }}</div>
+            </section>
+            <section class="form-section">
+                <h2>Schedule and Status</h2>
+                <div class="field field-start_date">{{ form.start_date.label_tag }}{{ form.start_date }}{{ form.start_date.errors }}</div>
+                <div class="field field-end_date">{{ form.end_date.label_tag }}{{ form.end_date }}{{ form.end_date.errors }}</div>
+                <div class="field field-status">{{ form.status.label_tag }}{{ form.status }}{{ form.status.errors }}</div>
+                <div class="field field-notes">{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
+            </section>
+        {% else %}
+            {% for field in form %}
+                {% if slug != "employees" or field.name != "passport_photo" %}
+                    <div class="field field-{{ field.name }}{% if slug == 'contracts' and field.name in 'dog_count dog_rate metal_detector_count metal_detector_rate walk_through_detector_count walk_through_detector_rate panic_baton_count panic_baton_rate handcuffs_count handcuffs_rate' %} contract-deliverable-field{% endif %}">
+                        {{ field.label_tag }}
+                        {{ field }}
+                        {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+                        {{ field.errors }}
+                    </div>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
         <div class="form-actions">
             <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Cancel</a>
             <button class="btn btn-success" type="submit">Save</button>
         </div>
     </form>
 </section>
+{% if slug == "contracts" %}
+<script>
+    (function () {
+        const serviceType = document.getElementById("id_service_type");
+        const fields = Array.from(document.querySelectorAll(".contract-deliverable-field"));
+
+        function syncDeliverables() {
+            const showDeliverables = serviceType && serviceType.value === "Others";
+            fields.forEach((field) => {
+                field.classList.toggle("is-visible", showDeliverables);
+                const input = field.querySelector("input, select, textarea");
+                if (input) {
+                    input.disabled = !showDeliverables;
+                }
+            });
+        }
+
+        if (serviceType) {
+            serviceType.addEventListener("change", syncDeliverables);
+            syncDeliverables();
+        }
+    })();
+</script>
+{% endif %}
+{% if slug == "contract-site-requirements" %}
+{{ "{}"|json_script:"contract-requirement-data" }}
+<script>
+    (function () {
+        const clientSelect = document.getElementById("id_client");
+        const contractSelect = document.getElementById("id_contract");
+        const generatedSiteCode = document.getElementById("id_generated_site_code");
+        const contractFields = [
+            "rate_per_guard",
+            "dog_count",
+            "dog_rate",
+            "metal_detector_count",
+            "metal_detector_rate",
+            "walk_through_machine_count",
+            "walk_through_machine_rate",
+            "panic_baton_count",
+            "panic_baton_rate",
+            "handcuffs_count",
+            "handcuffs_rate",
+            "start_date",
+            "end_date",
+        ];
+        let contractData = {};
+
+        function setOptions(select, items, labelKey) {
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">---------</option>';
+            items.forEach((item) => {
+                const option = document.createElement("option");
+                option.value = item.id;
+                option.textContent = item[labelKey];
+                select.appendChild(option);
+            });
+            if (currentValue && Array.from(select.options).some((option) => option.value === currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        function fillContractFields() {
+            const selected = contractData[contractSelect.value];
+            if (!selected) {
+                return;
+            }
+            contractFields.forEach((name) => {
+                const input = document.getElementById(`id_${name}`);
+                if (input && Object.prototype.hasOwnProperty.call(selected, name)) {
+                    input.value = selected[name] || "";
+                }
+            });
+        }
+
+        async function loadClientData() {
+            if (!clientSelect.value) {
+                return;
+            }
+            const response = await fetch(`/clients/${clientSelect.value}/contract-requirement-data/`, {
+                headers: {"Accept": "application/json"}
+            });
+            if (!response.ok) {
+                return;
+            }
+            const data = await response.json();
+            contractData = {};
+            data.contracts.forEach((contract) => {
+                contractData[String(contract.id)] = contract;
+            });
+            if (generatedSiteCode) {
+                generatedSiteCode.value = data.next_site_code || "";
+            }
+            setOptions(contractSelect, data.contracts.map((contract) => ({
+                id: contract.id,
+                name: `${contract.number} - ${contract.billing_rate}`
+            })), "name");
+            fillContractFields();
+        }
+
+        if (clientSelect && contractSelect) {
+            clientSelect.addEventListener("change", loadClientData);
+            contractSelect.addEventListener("change", fillContractFields);
+            if (clientSelect.value) {
+                loadClientData();
+            }
+        }
+    })();
+</script>
+{% endif %}
 {% endblock %}
