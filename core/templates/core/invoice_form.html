@@ -25,6 +25,9 @@
         font-weight: 800;
         overflow-wrap: anywhere;
     }
+    .invoice-scope-field[hidden] {
+        display: none;
+    }
     @media (max-width: 980px) {
         .invoice-client-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -48,7 +51,8 @@
         <div class="field">{{ form.contract.label_tag }}{{ form.contract }}{{ form.contract.errors }}</div>
         <div class="field">{{ form.client.label_tag }}{{ form.client }}<span class="helptext">{{ form.client.help_text }}</span>{{ form.client.errors }}</div>
         <div class="field">{{ form.billing_scope.label_tag }}{{ form.billing_scope }}<span class="helptext">{{ form.billing_scope.help_text }}</span>{{ form.billing_scope.errors }}</div>
-        <div class="field">{{ form.site.label_tag }}{{ form.site }}{{ form.site.errors }}</div>
+        <div class="field invoice-scope-field" data-scope-field="single">{{ form.site.label_tag }}{{ form.site }}<span class="helptext">{{ form.site.help_text }}</span>{{ form.site.errors }}</div>
+        <div class="field invoice-scope-field" data-scope-field="multiple">{{ form.selected_sites.label_tag }}{{ form.selected_sites }}<span class="helptext">{{ form.selected_sites.help_text }}</span>{{ form.selected_sites.errors }}</div>
         <div class="invoice-client-card" id="invoice-client-card" aria-live="polite">
             <div><span>Client Name</span><strong data-client-field="name">{% if record %}{{ record.client_name }}{% endif %}</strong></div>
             <div><span>Contact</span><strong data-client-field="contact">{% if record %}{{ record.client_contact_person }}{% endif %}</strong></div>
@@ -98,9 +102,11 @@
         var clientInput = document.getElementById("id_client");
         var scopeInput = document.getElementById("id_billing_scope");
         var siteInput = document.getElementById("id_site");
+        var selectedSitesInput = document.getElementById("id_selected_sites");
         var billingMonthInput = document.getElementById("id_billing_month");
         var dataUrlTemplate = "{% url 'core:contract_invoice_data' 0 %}";
         var selectedSite = siteInput ? siteInput.value : "";
+        var selectedSites = selectedSitesInput ? Array.from(selectedSitesInput.selectedOptions).map(function (option) { return option.value; }) : [];
 
         function setText(name, value) {
             var node = document.querySelector('[data-client-field="' + name + '"]');
@@ -115,30 +121,58 @@
         }
 
         function syncScope() {
-            if (!scopeInput || !siteInput) {
+            if (!scopeInput) {
                 return;
             }
-            var allSites = scopeInput.value === "contract";
-            siteInput.disabled = allSites;
-            if (allSites) {
+            var singleSite = scopeInput.value === "site";
+            var multipleSites = scopeInput.value === "multiple_sites";
+            document.querySelectorAll("[data-scope-field]").forEach(function (field) {
+                field.hidden = field.getAttribute("data-scope-field") === "single" ? !singleSite : !multipleSites;
+            });
+            if (siteInput) {
+                siteInput.disabled = !singleSite;
+            }
+            if (selectedSitesInput) {
+                selectedSitesInput.disabled = !multipleSites;
+            }
+            if (!singleSite && siteInput) {
                 siteInput.value = "";
+            }
+            if (!multipleSites && selectedSitesInput) {
+                Array.from(selectedSitesInput.options).forEach(function (option) { option.selected = false; });
             }
         }
 
+        function selectedSiteValues() {
+            if (!selectedSitesInput) {
+                return [];
+            }
+            return Array.from(selectedSitesInput.selectedOptions).map(function (option) { return String(option.value); });
+        }
+
         function updateSiteSummary(sites) {
-            if (!siteInput) {
-                return;
-            }
-            var current = sites.find(function (site) { return String(site.id) === String(siteInput.value); });
-            if (!current && sites.length) {
-                current = sites[0];
-            }
             if (scopeInput && scopeInput.value === "contract") {
                 var guards = sites.reduce(function (sum, site) { return sum + Number(site.guards || 0); }, 0);
                 var subtotal = sites.reduce(function (sum, site) { return sum + Number(site.subtotal || 0); }, 0);
                 setText("guards", guards);
                 setText("subtotal", money(subtotal));
                 return;
+            }
+            if (scopeInput && scopeInput.value === "multiple_sites") {
+                var selected = selectedSiteValues();
+                var matchingSites = sites.filter(function (site) { return selected.indexOf(String(site.id)) !== -1; });
+                var selectedGuards = matchingSites.reduce(function (sum, site) { return sum + Number(site.guards || 0); }, 0);
+                var selectedSubtotal = matchingSites.reduce(function (sum, site) { return sum + Number(site.subtotal || 0); }, 0);
+                setText("guards", selectedGuards);
+                setText("subtotal", money(selectedSubtotal));
+                return;
+            }
+            if (!siteInput) {
+                return;
+            }
+            var current = sites.find(function (site) { return String(site.id) === String(siteInput.value); });
+            if (!current && sites.length) {
+                current = sites[0];
             }
             setText("guards", current ? current.guards : 0);
             setText("subtotal", money(current ? current.subtotal : 0));
@@ -149,6 +183,9 @@
                 return;
             }
             siteInput.innerHTML = "";
+            if (selectedSitesInput) {
+                selectedSitesInput.innerHTML = "";
+            }
             var placeholder = document.createElement("option");
             placeholder.value = "";
             placeholder.textContent = "Select a contract site";
@@ -158,9 +195,18 @@
                 option.value = site.id;
                 option.textContent = site.name + " - " + site.guards + " guard(s)";
                 siteInput.appendChild(option);
+                if (selectedSitesInput) {
+                    var multiOption = option.cloneNode(true);
+                    selectedSitesInput.appendChild(multiOption);
+                }
             });
             if (selectedSite && sites.some(function (site) { return String(site.id) === String(selectedSite); })) {
                 siteInput.value = selectedSite;
+            }
+            if (selectedSitesInput && selectedSites.length) {
+                Array.from(selectedSitesInput.options).forEach(function (option) {
+                    option.selected = selectedSites.indexOf(String(option.value)) !== -1;
+                });
             }
             setText("sites", sites.length + " site(s)");
             updateSiteSummary(sites);
@@ -209,6 +255,12 @@
         if (siteInput) {
             siteInput.addEventListener("change", function () {
                 selectedSite = siteInput.value;
+                loadContract();
+            });
+        }
+        if (selectedSitesInput) {
+            selectedSitesInput.addEventListener("change", function () {
+                selectedSites = selectedSiteValues();
                 loadContract();
             });
         }

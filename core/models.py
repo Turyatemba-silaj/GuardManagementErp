@@ -1199,11 +1199,13 @@ class Invoice(TimeStampedModel):
 
     class BillingScope(models.TextChoices):
         SITE = "site", "One Site"
+        MULTIPLE_SITES = "multiple_sites", "Selected Sites"
         CONTRACT = "contract", "All Contract Sites"
 
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="invoices")
     contract = models.ForeignKey(Contract, on_delete=models.SET_NULL, null=True, blank=True, related_name="invoices")
     site = models.ForeignKey(Site, on_delete=models.SET_NULL, null=True, blank=True, related_name="invoices")
+    selected_sites = models.ManyToManyField(Site, blank=True, related_name="multi_site_invoices")
     billing_scope = models.CharField(max_length=20, choices=BillingScope.choices, default=BillingScope.SITE)
     client_name = models.CharField(max_length=150, blank=True)
     client_address = models.TextField(blank=True)
@@ -1277,6 +1279,11 @@ class Invoice(TimeStampedModel):
             if not self.site_id:
                 return ContractSiteRequirement.objects.none()
             requirements = requirements.filter(site=self.site)
+        elif self.billing_scope == self.BillingScope.MULTIPLE_SITES:
+            if not self.pk:
+                return ContractSiteRequirement.objects.none()
+            selected_site_ids = self.selected_sites.values_list("id", flat=True)
+            requirements = requirements.filter(site_id__in=selected_site_ids)
         return requirements
 
     def contract_billing_summary(self):
@@ -1334,7 +1341,7 @@ class Invoice(TimeStampedModel):
 
     def save(self, *args, **kwargs):
         self.sync_client_snapshot()
-        if self.billing_scope == self.BillingScope.CONTRACT:
+        if self.billing_scope in {self.BillingScope.CONTRACT, self.BillingScope.MULTIPLE_SITES}:
             self.site = None
         if not self.invoice_number:
             self.invoice_number = self.next_invoice_number(self.invoice_date)

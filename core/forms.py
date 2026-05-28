@@ -315,6 +315,7 @@ class InvoiceForm(forms.ModelForm):
             "contract",
             "billing_scope",
             "site",
+            "selected_sites",
             "billing_month",
             "invoice_date",
             "due_date",
@@ -350,12 +351,14 @@ class InvoiceForm(forms.ModelForm):
         }
         help_texts = {
             "billing_month": "Use the first day of the billing month, for example 2026-05-01.",
-            "billing_scope": "Choose one site or invoice every active site on the selected contract.",
-            "site": "Required when invoicing one site. Leave blank when invoicing all contract sites.",
+            "billing_scope": "Choose one site, selected sites, or every active site on the selected contract.",
+            "site": "Required when invoicing one site.",
+            "selected_sites": "Choose two or more sites from the selected contract.",
             "guard_count": "Automatically calculated from the selected contract site requirements when available.",
             "rate_per_guard": "Automatically pulled from the contract site requirement or parent contract.",
         }
         widgets = {
+            "selected_sites": forms.SelectMultiple(attrs={"size": 6}),
             "billing_month": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "invoice_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "due_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
@@ -371,6 +374,7 @@ class InvoiceForm(forms.ModelForm):
         self.fields["client"].required = False
         self.fields["client"].widget.attrs["readonly"] = "readonly"
         self.fields["client"].help_text = "Automatically selected from the contract."
+        self.fields["selected_sites"].required = False
         if not self.is_bound and not self.instance.pk:
             self.fields["billing_month"].initial = timezone.localdate().replace(day=1)
         contract = None
@@ -384,27 +388,50 @@ class InvoiceForm(forms.ModelForm):
             contract = self.instance.contract
         if contract:
             self.fields["client"].initial = contract.client
-            self.fields["site"].queryset = models.Site.objects.filter(
+            contract_sites = models.Site.objects.filter(
                 contract_requirements__contract=contract
             ).distinct().order_by("site_name")
+            self.fields["site"].queryset = contract_sites
+            self.fields["selected_sites"].queryset = contract_sites
         else:
             self.fields["site"].queryset = models.Site.objects.none()
+            self.fields["selected_sites"].queryset = models.Site.objects.none()
 
     def clean(self):
         cleaned_data = super().clean()
         contract = cleaned_data.get("contract")
         billing_scope = cleaned_data.get("billing_scope")
         site = cleaned_data.get("site")
+        selected_sites = cleaned_data.get("selected_sites")
         if contract:
             cleaned_data["client"] = contract.client
         if billing_scope == models.Invoice.BillingScope.SITE and not site:
-            self.add_error("site", "Select a site, or choose all contract sites.")
+            self.add_error("site", "Select a site, selected sites, or all contract sites.")
+        if billing_scope == models.Invoice.BillingScope.MULTIPLE_SITES and not selected_sites:
+            self.add_error("selected_sites", "Select at least one contract site.")
         if contract and site and site.client_id != contract.client_id:
             self.add_error("site", "Selected site must belong to the contract client.")
         if contract and site and not models.ContractSiteRequirement.objects.filter(contract=contract, site=site).exists():
             self.add_error("site", "Selected site is not part of this contract.")
+        if contract and selected_sites:
+            invalid_sites = selected_sites.exclude(contract_requirements__contract=contract).distinct()
+            if invalid_sites.exists():
+                self.add_error("selected_sites", "Selected sites must belong to this contract.")
         if cleaned_data.get("billing_month"):
             cleaned_data["billing_month"] = cleaned_data["billing_month"].replace(day=1)
         for field_name in self.OPTIONAL_AMOUNT_FIELDS:
             cleaned_data[field_name] = cleaned_data.get(field_name) or 0
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        selected_sites = self.cleaned_data.get("selected_sites")
+        if commit:
+            instance.save()
+            self.save_m2m()
+            if instance.billing_scope == models.Invoice.BillingScope.MULTIPLE_SITES:
+                instance.selected_sites.set(selected_sites)
+                instance.save()
+            else:
+                instance.selected_sites.clear()
+        return instance

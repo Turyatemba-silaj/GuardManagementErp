@@ -1997,8 +1997,12 @@ def invoice_pdf(request, pk):
     styles = pdf_styles()
 
     billing_label = "All contract sites" if invoice.billing_scope == models.Invoice.BillingScope.CONTRACT else (
-        invoice.site.site_name if invoice.site_id else "One site"
+        ", ".join(invoice.selected_sites.order_by("site_name").values_list("site_name", flat=True))
+        if invoice.billing_scope == models.Invoice.BillingScope.MULTIPLE_SITES
+        else invoice.site.site_name if invoice.site_id else "One site"
     )
+    if not billing_label:
+        billing_label = "Selected sites"
     status_color = PDF_GREEN if invoice.status == models.StatusChoices.PAID else colors.HexColor("#dc2626")
     status_table = Table(
         [[invoice.get_status_display().upper()]],
@@ -2354,11 +2358,14 @@ def record_create(request, slug):
     form_class = build_model_form(config.model)
     form = form_class(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
-        instance = form.save(commit=False)
-        if hasattr(instance, "allocated_by_id") and not instance.allocated_by_id:
-            instance.allocated_by = request.user
-        instance.save()
-        form.save_m2m()
+        if config.model is models.Invoice:
+            instance = form.save()
+        else:
+            instance = form.save(commit=False)
+            if hasattr(instance, "allocated_by_id") and not instance.allocated_by_id:
+                instance.allocated_by = request.user
+            instance.save()
+            form.save_m2m()
         messages.success(request, f"{config.title} record added successfully.")
         return redirect("core:record_list", slug=slug)
     template = "core/invoice_form.html" if config.model is models.Invoice else "core/record_form.html"
@@ -2377,9 +2384,12 @@ def record_update(request, slug, pk):
     form_class = build_model_form(config.model)
     form = form_class(request.POST or None, request.FILES or None, instance=instance)
     if request.method == "POST" and form.is_valid():
-        updated_instance = form.save(commit=False)
-        updated_instance.save()
-        form.save_m2m()
+        if config.model is models.Invoice:
+            form.save()
+        else:
+            updated_instance = form.save(commit=False)
+            updated_instance.save()
+            form.save_m2m()
         messages.success(request, f"{config.title} record updated successfully.")
         return redirect("core:record_list", slug=slug)
     template = "core/invoice_form.html" if config.model is models.Invoice else "core/record_form.html"
@@ -2502,19 +2512,62 @@ def attendances(request):
             is_present = present_value.lower() in {"on", "yes", "true", "1"}
             replacement_employee_id = request.POST.get(f"replacement_guard_{schedule_id}") or ""
             reason = request.POST.get(f"reason_{schedule_id}", "").strip()
-            attendance, _created = models.Attendance.objects.update_or_create(
-                employee=selected_employee,
-                date=schedule.shift_date,
-                shift=schedule.shift,
-                defaults={
-                    "schedule": schedule,
-                    "status": "Present" if is_present else "Absent",
-                    "capture_source": models.Attendance.CaptureSource.MANUAL,
-                    "captured_by": request.user,
-                    "captured_at": timezone.now(),
-                    "remarks": reason,
-                },
-            )
+            attendance = models.Attendance.objects.filter(schedule=schedule).first()
+            if not attendance:
+                attendance = models.Attendance.objects.filter(
+                    employee=selected_employee,
+                    date=schedule.shift_date,
+                    shift=schedule.shift,
+                ).first()
+            attendance_values = {
+                "employee": selected_employee,
+                "schedule": schedule,
+                "shift": schedule.shift,
+                "date": schedule.shift_date,
+                "status": "Present" if is_present else "Absent",
+                "capture_source": models.Attendance.CaptureSource.MANUAL,
+                "captured_by": request.user,
+                "captured_at": timezone.now(),
+                "remarks": reason,
+            }
+            if attendance:
+                conflict = (
+                    models.Attendance.objects.filter(
+                        employee=selected_employee,
+                        date=schedule.shift_date,
+                        shift=schedule.shift,
+                    )
+                    .exclude(pk=attendance.pk)
+                    .first()
+                )
+                if conflict and conflict.schedule_id:
+                    messages.error(
+                        request,
+                        f"{selected_employee.full_name} already has scheduled attendance for this date and shift.",
+                    )
+                    continue
+                if conflict:
+                    conflict.delete()
+                for field, value in attendance_values.items():
+                    setattr(attendance, field, value)
+                attendance.save(
+                    update_fields=[
+                        "employee",
+                        "schedule",
+                        "shift",
+                        "date",
+                        "status",
+                        "capture_source",
+                        "captured_by",
+                        "captured_at",
+                        "remarks",
+                        "updated_at",
+                    ]
+                )
+            else:
+                models.Attendance.objects.create(
+                    **attendance_values,
+                )
             schedule.replacement_employee = None
             schedule.replacement_reason = ""
             if is_present:

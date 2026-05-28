@@ -612,6 +612,66 @@ class FinanceCalculationTests(TestCase):
         self.assertEqual(invoice.subtotal_amount, Decimal("640000.00"))
         self.assertEqual(invoice.total_amount, Decimal("755200.00"))
 
+    def test_invoice_can_bill_selected_sites_under_one_contract(self):
+        client = Client.objects.create(
+            client_name="Selected Sites Client",
+            contact_person="Sarah",
+            phone_number="0711111188",
+            contract_start_date="2026-01-01",
+        )
+        first_site = Site.objects.create(client=client, site_name="Main Gate", site_address="Plot A", city="Kampala")
+        second_site = Site.objects.create(client=client, site_name="Warehouse", site_address="Plot B", city="Kampala")
+        third_site = Site.objects.create(client=client, site_name="Admin Block", site_address="Plot C", city="Kampala")
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="SELECTED-001",
+            start_date="2026-01-01",
+            billing_rate=Decimal("100000.00"),
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=first_site,
+            required_guards=2,
+            rate_per_guard=Decimal("120000.00"),
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=second_site,
+            required_guards=3,
+            rate_per_guard=Decimal("100000.00"),
+            radio_count=1,
+            radio_rate=Decimal("50000.00"),
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=third_site,
+            required_guards=5,
+            rate_per_guard=Decimal("100000.00"),
+            start_date="2026-01-01",
+            status=StatusChoices.ACTIVE,
+        )
+
+        invoice = Invoice.objects.create(
+            client=client,
+            contract=contract,
+            billing_scope=Invoice.BillingScope.MULTIPLE_SITES,
+            billing_month="2026-05-01",
+            due_date="2026-06-15",
+        )
+        invoice.selected_sites.set([first_site, second_site])
+        invoice.save()
+
+        self.assertIsNone(invoice.site)
+        self.assertEqual(invoice.guard_count, 5)
+        self.assertEqual(invoice.radio_count, 1)
+        self.assertEqual(invoice.subtotal_amount, Decimal("590000.00"))
+        self.assertEqual(invoice.total_amount, Decimal("696200.00"))
+
     def test_invoice_can_bill_one_site_under_contract(self):
         client = Client.objects.create(
             client_name="Single Site Client",
@@ -1112,6 +1172,40 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(attendance.status, "Present")
         self.assertEqual(attendance.remarks, "Reported on time")
         self.assertEqual(schedule.status, GuardSchedule.ScheduleStatus.COMPLETED)
+
+    def test_scheduled_guard_attendance_can_be_reassigned_without_duplicate_schedule(self):
+        self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        schedule = GuardSchedule.objects.get()
+        self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                f"present_{schedule.id}": "yes",
+            },
+        )
+
+        response = self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"scheduled_guard_{schedule.id}": str(self.replacement_guard.id),
+                f"present_{schedule.id}": "yes",
+                f"reason_{schedule.id}": "Roster correction",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Attendance.objects.filter(schedule=schedule).count(), 1)
+        attendance = Attendance.objects.get(schedule=schedule)
+        schedule.refresh_from_db()
+        self.assertEqual(attendance.employee, self.replacement_guard)
+        self.assertEqual(attendance.remarks, "Roster correction")
+        self.assertEqual(schedule.employee, self.replacement_guard)
 
     def test_absent_scheduled_guard_can_have_replacement(self):
         self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
