@@ -1232,6 +1232,60 @@ class GuardSchedulingTests(TestCase):
         replacement_attendance = Attendance.objects.get(employee=self.replacement_guard)
         self.assertEqual(replacement_attendance.status, "Present")
 
+    def test_replacement_guard_attendance_counts_in_payroll(self):
+        self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        schedule = GuardSchedule.objects.get()
+
+        self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                f"replacement_guard_{schedule.id}": str(self.replacement_guard.id),
+                f"reason_{schedule.id}": "Scheduled guard called in sick",
+            },
+        )
+
+        replacement_salary = Salary.objects.get(
+            employee=self.replacement_guard,
+            pay_period_start="2026-05-01",
+        )
+        self.assertEqual(replacement_salary.attendance_days, 1)
+        self.assertFalse(
+            Salary.objects.filter(employee=self.guard, pay_period_start="2026-05-01").exists()
+        )
+
+    def test_attendance_report_filters_replacement_guard_as_attended_employee(self):
+        self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})
+        schedule = GuardSchedule.objects.get()
+        self.client.post(
+            "/attendances/",
+            {
+                "site": str(self.site.id),
+                "date": "2026-05-16",
+                "schedule_ids": [str(schedule.id)],
+                f"scheduled_guard_{schedule.id}": str(self.guard.id),
+                f"replacement_guard_{schedule.id}": str(self.replacement_guard.id),
+                f"reason_{schedule.id}": "Scheduled guard called in sick",
+            },
+        )
+
+        response = self.client.get(
+            "/reports/attendance/",
+            {
+                "employee_number": self.replacement_guard.company_number,
+                "start_date": "2026-05-01",
+                "end_date": "2026-05-31",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"{self.replacement_guard.company_number}-{self.replacement_guard.full_name}")
+        self.assertContains(response, f"{self.guard.company_number}-{self.guard.full_name}")
+        self.assertNotContains(response, "No attendance records found.")
+
     def test_guard_schedule_form_routes_back_to_attendance_screen(self):
         response = self.client.get("/records/guard-schedules/add/")
 

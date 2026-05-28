@@ -3474,6 +3474,10 @@ def attendance_report(request):
             | Q(employee__national_id__icontains=employee_number)
             | Q(employee__first_name__icontains=employee_number)
             | Q(employee__last_name__icontains=employee_number)
+            | Q(replacement_employee__company_number__icontains=employee_number)
+            | Q(replacement_employee__national_id__icontains=employee_number)
+            | Q(replacement_employee__first_name__icontains=employee_number)
+            | Q(replacement_employee__last_name__icontains=employee_number)
         )
 
     rows = []
@@ -3486,8 +3490,15 @@ def attendance_report(request):
         scheduled_employee = f"{schedule.employee.company_number}-{schedule.employee.full_name}"
         attended_employee = scheduled_employee if attendance and attendance.status == "Present" else "NONE"
         replacement = "NONE"
+        replacement_attendance = None
         if schedule.replacement_employee:
             replacement = f"{schedule.replacement_employee.company_number}-{schedule.replacement_employee.full_name}"
+            replacement_attendance = models.Attendance.objects.filter(
+                employee=schedule.replacement_employee,
+                date=schedule.shift_date,
+                shift=schedule.shift,
+                status__iexact="Present",
+            ).first()
             attended_employee = replacement
 
         row = {
@@ -3500,7 +3511,11 @@ def attendance_report(request):
             "attendance": attended_employee,
             "replacement": replacement,
             "recorded_by": "system",
-            "date_recorded": attendance.updated_at if attendance else schedule.updated_at,
+            "date_recorded": (
+                replacement_attendance.updated_at
+                if replacement_attendance
+                else attendance.updated_at if attendance else schedule.updated_at
+            ),
         }
         haystack = " ".join(str(value) for value in row.values()).lower()
         if not search_query or search_query.lower() in haystack:
