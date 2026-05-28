@@ -1,4 +1,5 @@
 from django import forms
+from django.utils import timezone
 
 from . import models
 from .security import validate_model_upload
@@ -294,6 +295,19 @@ class ContractSiteRequirementForm(SecureModelForm):
 
 
 class InvoiceForm(forms.ModelForm):
+    OPTIONAL_AMOUNT_FIELDS = (
+        "gun_count",
+        "gun_rate",
+        "radio_count",
+        "radio_rate",
+        "metal_detector_count",
+        "metal_detector_rate",
+        "walk_through_machine_count",
+        "walk_through_machine_rate",
+        "dog_count",
+        "dog_rate",
+    )
+
     class Meta:
         model = models.Invoice
         fields = (
@@ -342,18 +356,23 @@ class InvoiceForm(forms.ModelForm):
             "rate_per_guard": "Automatically pulled from the contract site requirement or parent contract.",
         }
         widgets = {
-            "billing_month": forms.DateInput(attrs={"type": "date"}),
-            "invoice_date": forms.DateInput(attrs={"type": "date"}),
-            "due_date": forms.DateInput(attrs={"type": "date"}),
+            "billing_month": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+            "invoice_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+            "due_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "form-control")
+        self.fields["billing_month"].required = True
+        for field_name in self.OPTIONAL_AMOUNT_FIELDS:
+            self.fields[field_name].required = False
         self.fields["client"].required = False
         self.fields["client"].widget.attrs["readonly"] = "readonly"
         self.fields["client"].help_text = "Automatically selected from the contract."
+        if not self.is_bound and not self.instance.pk:
+            self.fields["billing_month"].initial = timezone.localdate().replace(day=1)
         contract = None
         contract_id = self.data.get("contract") if self.data else None
         if contract_id:
@@ -384,4 +403,8 @@ class InvoiceForm(forms.ModelForm):
             self.add_error("site", "Selected site must belong to the contract client.")
         if contract and site and not models.ContractSiteRequirement.objects.filter(contract=contract, site=site).exists():
             self.add_error("site", "Selected site is not part of this contract.")
+        if cleaned_data.get("billing_month"):
+            cleaned_data["billing_month"] = cleaned_data["billing_month"].replace(day=1)
+        for field_name in self.OPTIONAL_AMOUNT_FIELDS:
+            cleaned_data[field_name] = cleaned_data.get(field_name) or 0
         return cleaned_data

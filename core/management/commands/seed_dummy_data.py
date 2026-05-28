@@ -29,12 +29,15 @@ class Command(BaseCommand):
 
         self.create_zone_guard_allocations(zones, guards, today)
         self.create_zone_site_allocations(zones, sites, today)
+        roster_rows = self.create_roster_attendance(schedules, today)
         self.create_incidents(deployments, employees, today)
         self.create_patrol_logs(guards, sites, today)
         self.create_assets(employees, today)
         self.create_trainings(employees, today)
         self.create_recruitment(positions, employees, today)
-        self.create_attendance(schedules, employees, shifts, today)
+        attendance_records = self.create_attendance(schedules, employees, shifts, today)
+        devices = self.create_attendance_devices(sites, supervisors)
+        self.create_attendance_device_events(devices, attendance_records, schedules, employees, sites, today)
         self.create_leaves(employees, today)
         self.create_disciplinary_actions(employees, today)
         self.create_performance_evaluations(employees, today)
@@ -45,6 +48,8 @@ class Command(BaseCommand):
         self.create_payments(invoices, employees, today)
         self.create_budgets()
         self.create_expenses(employees, today)
+        accounts = self.create_accounts()
+        self.create_journal_entries(accounts, today)
 
         counts = [(config.title, config.model.objects.count()) for config in MODEL_REGISTRY.values()]
         for title, count in counts:
@@ -202,18 +207,18 @@ class Command(BaseCommand):
         for index, employee in enumerate(employees, start=1):
             employee.uniform_size = ["S", "M", "L", "XL", "XXL"][index - 1]
             employee.qualification = "Basic security certification"
-            employee.armed_status = index % 2 == 0
             employee.training_level = ["Basic", "Intermediate", "Advanced", "Basic", "Advanced"][index - 1]
             employee.company_number = f"DEMO-G-{index:03d}"
-            employee.license_no = f"DEMO-LIC-{index:03d}"
+            employee.work_card_uid = f"DEMO-CARD-{index:03d}"
+            employee.nssf_number = f"DEMO-NSSF-{index:03d}"
             employee.save(
                 update_fields=[
                     "uniform_size",
                     "qualification",
-                    "armed_status",
                     "training_level",
                     "company_number",
-                    "license_no",
+                    "work_card_uid",
+                    "nssf_number",
                     "updated_at",
                 ]
             )
@@ -279,6 +284,27 @@ class Command(BaseCommand):
             )
             schedules.append(schedule)
         return schedules
+
+    def create_roster_attendance(self, schedules, today):
+        roster_rows = []
+        for index, schedule in enumerate(schedules, start=1):
+            row, _created = models.RosterAttendance.objects.update_or_create(
+                file_name="demo_roster.xlsx",
+                source_row=index,
+                defaults={
+                    "source_format": models.RosterAttendance.SourceFormat.SIMPLE,
+                    "employee": schedule.employee,
+                    "site": schedule.site,
+                    "shift": schedule.shift,
+                    "shift_date": today + timedelta(days=index - 1),
+                    "schedule": schedule,
+                    "duty_code": "D",
+                    "import_status": models.RosterAttendance.ImportStatus.CREATED,
+                    "message": "Demo roster attendance row.",
+                },
+            )
+            roster_rows.append(row)
+        return roster_rows
 
     def create_zone_guard_allocations(self, zones, guards, today):
         for index, guard in enumerate(guards):
@@ -378,17 +404,23 @@ class Command(BaseCommand):
 
     def create_recruitment(self, positions, employees, today):
         requisitions = []
-        for index in range(1, 4):
+        for index in range(1, 6):
             requisition, _created = models.RecruitmentRequisition.objects.update_or_create(
                 requisition_number=f"REQ-{today:%Y}-{index:03d}",
                 defaults={
-                    "vacancy_title": ["Security Guard", "Field Supervisor", "Control Room Operator"][index - 1],
+                    "vacancy_title": [
+                        "Security Guard",
+                        "Field Supervisor",
+                        "Control Room Operator",
+                        "Patrol Officer",
+                        "HR Assistant",
+                    ][index - 1],
                     "position": positions[min(index - 1, len(positions) - 1)],
-                    "department": models.DepartmentChoices.OPERATIONS,
+                    "department": models.DepartmentChoices.HUMAN_RESOURCE if index == 5 else models.DepartmentChoices.OPERATIONS,
                     "requested_by": employees[5],
-                    "number_of_openings": [10, 2, 3][index - 1],
+                    "number_of_openings": [10, 2, 3, 4, 1][index - 1],
                     "employment_type": models.RecruitmentRequisition.EmploymentType.FULL_TIME,
-                    "work_location": ["Kampala", "Entebbe", "Head Office"][index - 1],
+                    "work_location": ["Kampala", "Entebbe", "Head Office", "Mukono", "Head Office"][index - 1],
                     "opening_date": today - timedelta(days=20 + index),
                     "closing_date": today + timedelta(days=10 + index),
                     "salary_budget_min": Decimal("350000.00") + Decimal(index * 50000),
@@ -452,23 +484,23 @@ class Command(BaseCommand):
                     "status": models.StatusChoices.APPROVED,
                 },
             )
-            if index <= 2:
-                models.JobOffer.objects.update_or_create(
-                    application=application,
-                    defaults={
-                        "offered_position": application.requisition.position,
-                        "offer_date": today,
-                        "expected_start_date": today + timedelta(days=14 + index),
-                        "salary_offer": Decimal("550000.00") + Decimal(index * 50000),
-                        "contract_type": "Full-time",
-                        "status": models.JobOffer.OfferStatus.SENT,
-                        "notes": "Offer pending candidate confirmation.",
-                    },
-                )
+            models.JobOffer.objects.update_or_create(
+                application=application,
+                defaults={
+                    "offered_position": application.requisition.position,
+                    "offer_date": today,
+                    "expected_start_date": today + timedelta(days=14 + index),
+                    "salary_offer": Decimal("550000.00") + Decimal(index * 50000),
+                    "contract_type": "Full-time",
+                    "status": models.JobOffer.OfferStatus.SENT,
+                    "notes": "Offer pending candidate confirmation.",
+                },
+            )
 
     def create_attendance(self, schedules, employees, shifts, today):
+        attendance_records = []
         for index, schedule in enumerate(schedules):
-            models.Attendance.objects.update_or_create(
+            attendance, _created = models.Attendance.objects.update_or_create(
                 employee=employees[index],
                 date=today - timedelta(days=index),
                 defaults={
@@ -478,6 +510,47 @@ class Command(BaseCommand):
                     "time_out": time(17, 0),
                     "status": "Present",
                     "remarks": "Demo attendance record.",
+                },
+            )
+            attendance_records.append(attendance)
+        return attendance_records
+
+    def create_attendance_devices(self, sites, supervisors):
+        devices = []
+        for index, site in enumerate(sites, start=1):
+            device, _created = models.AttendanceDevice.objects.update_or_create(
+                device_id=f"DEMO-DEVICE-{index:03d}",
+                defaults={
+                    "name": f"Demo Attendance Device {index}",
+                    "api_key": f"demo-device-api-key-{index:03d}",
+                    "assigned_site": site,
+                    "assigned_supervisor": supervisors[index - 1],
+                    "is_active": True,
+                    "notes": "Demo attendance device.",
+                },
+            )
+            devices.append(device)
+        return devices
+
+    def create_attendance_device_events(self, devices, attendance_records, schedules, employees, sites, today):
+        for index, device in enumerate(devices, start=1):
+            models.AttendanceDeviceEvent.objects.update_or_create(
+                device=device,
+                card_uid=f"DEMO-CARD-{index:03d}",
+                event_timestamp=timezone.make_aware(datetime.combine(today - timedelta(days=index), time(8, index))),
+                defaults={
+                    "device_identifier": device.device_id,
+                    "employee": employees[index - 1],
+                    "site": sites[index - 1],
+                    "schedule": schedules[index - 1],
+                    "attendance": attendance_records[index - 1],
+                    "event_type": models.AttendanceDeviceEvent.EventType.CHECK_IN,
+                    "latitude": Decimal("0.347596") + Decimal(index) / Decimal("1000"),
+                    "longitude": Decimal("32.582520") + Decimal(index) / Decimal("1000"),
+                    "geofence_distance_meters": Decimal(index * 3),
+                    "status": models.AttendanceDeviceEvent.EventStatus.ACCEPTED,
+                    "message": "Demo device event accepted.",
+                    "payload": {"source": "seed_dummy_data", "row": index},
                 },
             )
 
@@ -630,3 +703,51 @@ class Command(BaseCommand):
                     "remarks": "Demo expense record.",
                 },
             )
+
+    def create_accounts(self):
+        data = [
+            ("1000", "Demo Cash", models.Account.AccountType.ASSET),
+            ("1100", "Demo Accounts Receivable", models.Account.AccountType.ASSET),
+            ("2000", "Demo Accounts Payable", models.Account.AccountType.LIABILITY),
+            ("4000", "Demo Security Service Income", models.Account.AccountType.INCOME),
+            ("5000", "Demo Payroll Expense", models.Account.AccountType.EXPENSE),
+        ]
+        accounts = []
+        for code, name, account_type in data:
+            account, _created = models.Account.objects.update_or_create(
+                account_code=code,
+                defaults={"account_name": name, "account_type": account_type, "is_active": True},
+            )
+            accounts.append(account)
+        return accounts
+
+    def create_journal_entries(self, accounts, today):
+        cash, receivable, payable, income, payroll = accounts
+        for index in range(1, 6):
+            entry, _created = models.JournalEntry.objects.update_or_create(
+                reference=f"DEMO-JRN-{index:04d}",
+                defaults={
+                    "entry_date": today - timedelta(days=index),
+                    "description": "Demo balanced journal entry.",
+                    "source_module": "Demo Seed",
+                    "status": models.JournalEntry.EntryStatus.POSTED,
+                },
+            )
+            debit_account = cash if index % 2 else receivable
+            credit_account = income if index <= 3 else payable
+            amount = Decimal("250000.00") + Decimal(index * 50000)
+            models.JournalLine.objects.update_or_create(
+                journal_entry=entry,
+                account=debit_account,
+                defaults={"debit": amount, "credit": Decimal("0.00"), "description": "Demo debit line."},
+            )
+            models.JournalLine.objects.update_or_create(
+                journal_entry=entry,
+                account=credit_account,
+                defaults={"debit": Decimal("0.00"), "credit": amount, "description": "Demo credit line."},
+            )
+        models.JournalLine.objects.update_or_create(
+            journal_entry=models.JournalEntry.objects.get(reference="DEMO-JRN-0005"),
+            account=payroll,
+            defaults={"debit": Decimal("0.00"), "credit": Decimal("0.00"), "description": "Demo reference line."},
+        )

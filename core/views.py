@@ -310,6 +310,42 @@ def contract_invoice_data(request, pk):
         .filter(Q(end_date__gte=billing_month) | Q(end_date__isnull=True))
         .order_by("site__site_name", "shift__start_time", "start_date")
     )
+    sites = {}
+    for requirement in requirements:
+        site = requirement.site
+        row = sites.setdefault(
+            site.id,
+            {
+                "id": site.id,
+                "name": str(site),
+                "address": site.site_address,
+                "guards": 0,
+                "subtotal": Decimal("0.00"),
+            },
+        )
+        row["guards"] += requirement.required_guards
+        row["subtotal"] += requirement.billable_total
+    for row in sites.values():
+        row["subtotal"] = str(row["subtotal"].quantize(Decimal("0.01")))
+    client = contract.client
+    return JsonResponse(
+        {
+            "client": {
+                "id": client.id,
+                "name": client.client_name,
+                "address": client.address,
+                "email": client.email,
+                "contact": client.contact_person,
+                "phone": client.phone_number,
+            },
+            "contract": {
+                "id": contract.id,
+                "number": contract.contract_number,
+                "billing_rate": str(contract.billing_rate),
+            },
+            "sites": list(sites.values()),
+        }
+    )
 
 
 def contract_payload(contract):
@@ -353,42 +389,6 @@ def client_contract_requirement_data(request, pk):
             "next_site_code": ContractSiteRequirementForm.next_site_code(client),
             "contracts": contracts,
             "sites": sites,
-        }
-    )
-    sites = {}
-    for requirement in requirements:
-        site = requirement.site
-        row = sites.setdefault(
-            site.id,
-            {
-                "id": site.id,
-                "name": str(site),
-                "address": site.site_address,
-                "guards": 0,
-                "subtotal": Decimal("0.00"),
-            },
-        )
-        row["guards"] += requirement.required_guards
-        row["subtotal"] += requirement.billable_total
-    for row in sites.values():
-        row["subtotal"] = str(row["subtotal"].quantize(Decimal("0.01")))
-    client = contract.client
-    return JsonResponse(
-        {
-            "client": {
-                "id": client.id,
-                "name": client.client_name,
-                "address": client.address,
-                "email": client.email,
-                "contact": client.contact_person,
-                "phone": client.phone_number,
-            },
-            "contract": {
-                "id": contract.id,
-                "number": contract.contract_number,
-                "billing_rate": str(contract.billing_rate),
-            },
-            "sites": list(sites.values()),
         }
     )
 
@@ -1993,7 +1993,7 @@ def invoice_pdf(request, pk):
         pk=pk,
     )
     output = BytesIO()
-    document = SimpleDocTemplate(output, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=76, bottomMargin=42)
+    document = SimpleDocTemplate(output, pagesize=A4, rightMargin=34, leftMargin=34, topMargin=72, bottomMargin=42)
     styles = pdf_styles()
 
     billing_label = "All contract sites" if invoice.billing_scope == models.Invoice.BillingScope.CONTRACT else (
@@ -2019,6 +2019,13 @@ def invoice_pdf(request, pk):
         )
     )
 
+    supplier_details = [
+        ["Supplier", "Security Company Management"],
+        ["Address", "Kampala, Uganda"],
+        ["Email", "accounts@security-company.local"],
+        ["Phone", "+256 700 000 000"],
+        ["TIN", "-"],
+    ]
     title = Table(
         [
             [
@@ -2027,7 +2034,7 @@ def invoice_pdf(request, pk):
             ],
             [
                 Paragraph(f"Invoice No: <b>{invoice.invoice_number}</b>", styles["SmallMuted"]),
-                Paragraph(f"Billing: <b>{billing_label}</b>", styles["Right"]),
+                Paragraph(f"Balance Due: <b>{money_display(invoice.balance_amount)}</b>", styles["Right"]),
             ],
         ],
         colWidths=[330, 190],
@@ -2035,7 +2042,7 @@ def invoice_pdf(request, pk):
     title.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
 
     client_details = [
-        ["Client", invoice.client_name or invoice.client.client_name],
+        ["Customer", invoice.client_name or invoice.client.client_name],
         ["Contact", invoice.client_contact_person or "-"],
         ["Phone", invoice.client_phone_number or "-"],
         ["Email", invoice.client_email or "-"],
@@ -2046,24 +2053,27 @@ def invoice_pdf(request, pk):
         ["Due Date", invoice.due_date],
         ["Billing Month", invoice.billing_month or "-"],
         ["Contract", invoice.contract.contract_number if invoice.contract_id else "-"],
-        ["Scope", billing_label],
+        ["Service Scope", billing_label],
     ]
     details = Table(
         [
             [
+                Paragraph("From", styles["SectionTitle"]),
                 Paragraph("Bill To", styles["SectionTitle"]),
                 Paragraph("Invoice Details", styles["SectionTitle"]),
             ],
             [
-                key_value_table(client_details, [76, 174]),
-                key_value_table(invoice_details, [86, 164]),
+                key_value_table(supplier_details, [58, 106]),
+                key_value_table(client_details, [58, 106]),
+                key_value_table(invoice_details, [72, 92]),
             ],
         ],
-        colWidths=[260, 260],
+        colWidths=[172, 172, 172],
     )
     details.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
 
-    line_items = [["Description", "Qty", "Rate", "Amount"]]
+    service_period = invoice.billing_month.strftime("%B %Y") if invoice.billing_month else "-"
+    line_items = [["No.", "Description", "Service Period", "Qty", "Unit Rate", "Amount"]]
     item_map = [
         ("Guarding services", invoice.guard_count, invoice.rate_per_guard),
         ("Guns", invoice.gun_count, invoice.gun_rate),
@@ -2072,11 +2082,24 @@ def invoice_pdf(request, pk):
         ("Walk through machines", invoice.walk_through_machine_count, invoice.walk_through_machine_rate),
         ("Dogs", invoice.dog_count, invoice.dog_rate),
     ]
+    item_number = 1
     for description, count, rate in item_map:
         if count:
-            line_items.append([description, count, money_display(rate), money_display(Decimal(count) * Decimal(rate or 0))])
+            line_items.append(
+                [
+                    item_number,
+                    description,
+                    service_period,
+                    count,
+                    money_display(rate),
+                    money_display(Decimal(count) * Decimal(rate or 0)),
+                ]
+            )
+            item_number += 1
     if len(line_items) == 1:
-        line_items.append(["Billing services", 1, money_display(invoice.subtotal_amount), money_display(invoice.subtotal_amount)])
+        line_items.append(
+            [1, "Security services", service_period, 1, money_display(invoice.subtotal_amount), money_display(invoice.subtotal_amount)]
+        )
 
     totals = [
         ["Subtotal", money_display(invoice.subtotal_amount)],
@@ -2102,23 +2125,54 @@ def invoice_pdf(request, pk):
         )
     )
 
-    note = Paragraph(
-        "Thank you for your business. Please reference the invoice number when making payment.",
-        styles["SmallMuted"],
+    payment_terms = Table(
+        [
+            [
+                Paragraph("Payment Instructions", styles["SectionTitle"]),
+                Paragraph("Terms & Notes", styles["SectionTitle"]),
+            ],
+            [
+                Paragraph(
+                    f"Please pay the balance due by <b>{invoice.due_date}</b> and quote invoice "
+                    f"<b>{invoice.invoice_number}</b> on all payments.",
+                    styles["SmallMuted"],
+                ),
+                Paragraph(
+                    "This invoice is generated from approved contract billing details. Amounts are stated in Uganda Shillings and include VAT where applicable.",
+                    styles["SmallMuted"],
+                ),
+            ],
+        ],
+        colWidths=[250, 250],
     )
+    payment_terms.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.35, PDF_LINE),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, PDF_LINE),
+                ("BACKGROUND", (0, 0), (-1, 0), PDF_SOFT),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]
+        )
+    )
+
     elements = [
         title,
         Spacer(1, 14),
         details,
         Spacer(1, 14),
-        Paragraph("Billing Items", styles["SectionTitle"]),
-        styled_table(line_items, col_widths=[260, 60, 100, 100], right_columns=(1, 2, 3)),
+        Paragraph("Invoice Line Items", styles["SectionTitle"]),
+        styled_table(line_items, col_widths=[32, 168, 90, 42, 86, 86], right_columns=(3, 4, 5)),
         Spacer(1, 12),
         totals_table,
         Spacer(1, 18),
-        note,
-        Spacer(1, 22),
-        signature_table("Prepared By", "Client Acknowledgement"),
+        payment_terms,
+        Spacer(1, 20),
+        signature_table("Issued By", "Customer Acknowledgement"),
     ]
     document.build(
         elements,

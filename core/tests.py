@@ -53,7 +53,7 @@ from .models import (
 from .accounting import ensure_default_accounts, post_all_accounting, post_invoice, post_salary
 from .crud import MODEL_REGISTRY
 from .db_runtime import ensure_writable_sqlite_database
-from .forms import ContractForm, ContractSiteRequirementForm
+from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm
 import security_management.settings as project_settings
 
 
@@ -748,12 +748,52 @@ class FinanceCalculationTests(TestCase):
 
     def test_invoice_add_form_uses_billing_form_and_hides_manual_totals(self):
         response = self.client.get("/records/invoices/add/")
+        current_month = timezone.localdate().replace(day=1).isoformat()
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Billing Month")
+        self.assertContains(response, f'id="id_billing_month"')
+        self.assertContains(response, f'value="{current_month}"')
         self.assertContains(response, "Number of Guards")
         self.assertContains(response, "Rate Per Guard")
         self.assertContains(response, "18% VAT")
         self.assertNotContains(response, "Total amount")
+
+    def test_invoice_form_defaults_and_normalizes_billing_month(self):
+        form = InvoiceForm()
+
+        self.assertEqual(form.fields["billing_month"].initial, timezone.localdate().replace(day=1))
+        self.assertTrue(form.fields["billing_month"].required)
+
+        contract = Contract.objects.create(
+            client=Client.objects.create(
+                client_name="Billing Client",
+                contact_person="Jane",
+                phone_number="0711111199",
+                contract_start_date="2026-01-01",
+            ),
+            contract_number="BILL-001",
+            service_type="Manned Guarding",
+            start_date="2026-01-01",
+            end_date="2026-12-31",
+            billing_rate=Decimal("500000.00"),
+        )
+        form = InvoiceForm(
+            data={
+                "contract": contract.id,
+                "client": contract.client_id,
+                "billing_scope": Invoice.BillingScope.CONTRACT,
+                "billing_month": "2026-05-18",
+                "invoice_date": "2026-05-28",
+                "due_date": "2026-06-28",
+                "guard_count": 1,
+                "rate_per_guard": "500000.00",
+                "paid_amount": "0.00",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["billing_month"].isoformat(), "2026-05-01")
 
     def test_payroll_posts_salary_expense_and_payables(self):
         salary = Salary.objects.create(
