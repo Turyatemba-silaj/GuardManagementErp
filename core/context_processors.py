@@ -101,8 +101,8 @@ def build_sidebar_nav(groups, can_manage_payroll, user):
         )
 
     admin = [nav_item("Public Home", reverse("core:home"), "fa-house")]
-    if user.is_staff:
-        admin.append(nav_item("Django Admin", "/admin/", "fa-screwdriver-wrench"))
+    if user.is_superuser:
+        admin.append(nav_item("System Admin", "/admin/", "fa-screwdriver-wrench"))
 
     return [
         group

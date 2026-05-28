@@ -2332,3 +2332,25 @@ class ZoneAuthorizationTests(TestCase):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertIn(response.status_code, (302, 403))
+
+    def test_sidebar_system_admin_link_is_visible_only_to_superusers(self):
+        limited_user = User.objects.create_user(username="limited-sidebar", password="pass", is_staff=True)
+        group, _ = Group.objects.get_or_create(name="Operations Limited Manager")
+        limited_user.groups.add(group)
+        self.client.login(username="limited-sidebar", password="pass")
+
+        limited_response = self.client.get("/dashboard/")
+
+        self.assertEqual(limited_response.status_code, 200)
+        self.assertNotContains(limited_response, "System Admin")
+        self.assertNotContains(limited_response, 'href="/admin/"')
+
+        self.client.logout()
+        admin_user = User.objects.create_superuser(username="system-admin", password="pass", email="admin@example.com")
+        self.client.login(username="system-admin", password="pass")
+
+        admin_response = self.client.get("/dashboard/")
+
+        self.assertEqual(admin_response.status_code, 200)
+        self.assertContains(admin_response, "System Admin")
+        self.assertContains(admin_response, 'href="/admin/"')
