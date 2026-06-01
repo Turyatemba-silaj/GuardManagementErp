@@ -158,6 +158,42 @@ class ActivityLogAdmin(admin.ModelAdmin):
         return False
 
 
+class TenantMembershipInline(admin.TabularInline):
+    model = models.TenantMembership
+    extra = 0
+    autocomplete_fields = ("user",)
+
+
+@admin.register(models.SubscriptionPlan)
+class SubscriptionPlanAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "monthly_price", "user_limit", "site_limit", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(models.TenantOrganization)
+class TenantOrganizationAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "primary_domain", "plan", "status", "owner", "subscription_state")
+    list_filter = ("status", "plan")
+    search_fields = ("name", "slug", "primary_domain", "owner__username", "owner__email")
+    prepopulated_fields = {"slug": ("name",)}
+    autocomplete_fields = ("owner", "plan")
+    inlines = [TenantMembershipInline]
+
+    @admin.display(description="Subscription")
+    def subscription_state(self, obj):
+        return "Active" if obj.is_subscription_active else "Inactive"
+
+
+@admin.register(models.TenantMembership)
+class TenantMembershipAdmin(admin.ModelAdmin):
+    list_display = ("organization", "user", "role", "is_active")
+    list_filter = ("role", "is_active", "organization")
+    search_fields = ("organization__name", "user__username", "user__email")
+    autocomplete_fields = ("organization", "user")
+
+
 @admin.register(models.Client)
 class ClientAdmin(admin.ModelAdmin):
     list_display = ("client_name", "contact_person", "phone_number", "contract_status")

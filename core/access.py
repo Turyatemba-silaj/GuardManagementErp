@@ -1,3 +1,5 @@
+from django.conf import settings
+
 HR_MANAGER_GROUP = "Human Resources Manager"
 MANAGER_GROUP = "Manager"
 SYSTEM_ADMIN_GROUP = "System Administrator"
@@ -61,7 +63,16 @@ def can_manage_attendance(user):
 
 
 def can_access_internal(user):
-    return user.is_authenticated and (
+    if not user.is_authenticated:
+        return False
+    if getattr(settings, "SAAS_ENFORCE_TENANT_ACCESS", False) and not user.is_superuser:
+        has_active_tenant = user.tenant_memberships.filter(
+            is_active=True,
+            organization__status__in=["trialing", "active"],
+        ).exists()
+        if not has_active_tenant:
+            return False
+    return (
         user.is_staff
         or is_manager(user)
         or is_supervisor(user)

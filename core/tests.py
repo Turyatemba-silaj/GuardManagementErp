@@ -46,6 +46,9 @@ from .models import (
     Shift,
     Site,
     StatusChoices,
+    SubscriptionPlan,
+    TenantMembership,
+    TenantOrganization,
     Training,
     Zone,
     ZoneEmployeeAllocation,
@@ -178,6 +181,42 @@ class PermanentLoginMiddlewareTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], settings.LOGIN_REDIRECT_URL)
+
+
+class SaaSTenantMiddlewareTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="tenant-owner", password="pass", is_staff=True)
+        self.plan = SubscriptionPlan.objects.create(name="Standard", slug="standard")
+        self.organization = TenantOrganization.objects.create(
+            name="Tenant One",
+            slug="tenant-one",
+            primary_domain="tenant.testserver",
+            owner=self.user,
+            plan=self.plan,
+            status=TenantOrganization.Status.ACTIVE,
+        )
+        TenantMembership.objects.create(
+            organization=self.organization,
+            user=self.user,
+            role=TenantMembership.Role.OWNER,
+        )
+
+    @override_settings(ALLOWED_HOSTS=["tenant.testserver", "testserver"])
+    def test_request_resolves_current_tenant_from_domain(self):
+        self.client.login(username="tenant-owner", password="pass")
+        response = self.client.get(reverse("core:dashboard"), HTTP_HOST="tenant.testserver")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.wsgi_request.tenant, self.organization)
+
+    @override_settings(SAAS_ENFORCE_TENANT_ACCESS=True)
+    def test_tenant_enforcement_blocks_staff_without_membership(self):
+        outsider = User.objects.create_user(username="outsider", password="pass", is_staff=True)
+        self.client.login(username=outsider.username, password="pass")
+
+        response = self.client.get(reverse("core:dashboard"))
+
+        self.assertEqual(response.status_code, 302)
 
 
 class AdminLoginRedirectTests(TestCase):

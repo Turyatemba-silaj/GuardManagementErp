@@ -37,6 +37,87 @@ class DepartmentChoices(models.TextChoices):
     ADMIN = "admin", "Admin"
 
 
+class SubscriptionPlan(TimeStampedModel):
+    name = models.CharField(max_length=80, unique=True)
+    slug = models.SlugField(max_length=80, unique=True)
+    monthly_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    user_limit = models.PositiveIntegerField(default=10)
+    site_limit = models.PositiveIntegerField(default=25)
+    is_active = models.BooleanField(default=True)
+    features = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["monthly_price", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class TenantOrganization(TimeStampedModel):
+    class Status(models.TextChoices):
+        TRIALING = "trialing", "Trialing"
+        ACTIVE = "active", "Active"
+        PAST_DUE = "past_due", "Past due"
+        SUSPENDED = "suspended", "Suspended"
+        CANCELLED = "cancelled", "Cancelled"
+
+    name = models.CharField(max_length=150)
+    slug = models.SlugField(max_length=80, unique=True)
+    primary_domain = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="owned_tenant_organizations",
+    )
+    plan = models.ForeignKey(
+        SubscriptionPlan,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="tenant_organizations",
+    )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.TRIALING)
+    trial_ends_at = models.DateTimeField(null=True, blank=True)
+    subscription_ends_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def is_subscription_active(self):
+        now = timezone.now()
+        if self.status in {self.Status.ACTIVE, self.Status.TRIALING}:
+            return not self.subscription_ends_at or self.subscription_ends_at >= now
+        return False
+
+
+class TenantMembership(TimeStampedModel):
+    class Role(models.TextChoices):
+        OWNER = "owner", "Owner"
+        ADMIN = "admin", "Admin"
+        MANAGER = "manager", "Manager"
+        MEMBER = "member", "Member"
+
+    organization = models.ForeignKey(TenantOrganization, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="tenant_memberships")
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["organization__name", "user__username"]
+        constraints = [
+            models.UniqueConstraint(fields=["organization", "user"], name="unique_tenant_membership"),
+        ]
+
+    def __str__(self):
+        return f"{self.user} @ {self.organization}"
+
+
 class Client(TimeStampedModel):
     client_name = models.CharField(max_length=150)
     contact_person = models.CharField(max_length=150)

@@ -11,6 +11,50 @@ from .auth_backends import ensure_superuser
 from .db_runtime import ensure_writable_sqlite_database
 
 
+class SaaSTenantMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        request.tenant = None
+        request.tenant_membership = None
+        if request.user.is_authenticated:
+            from .models import TenantMembership, TenantOrganization
+
+            host = request.get_host().split(":", 1)[0].lower()
+            membership = None
+            if host:
+                membership = (
+                    TenantMembership.objects.select_related("organization", "organization__plan")
+                    .filter(
+                        user=request.user,
+                        is_active=True,
+                        organization__primary_domain__iexact=host,
+                    )
+                    .first()
+                )
+            active_tenant_id = request.session.get("active_tenant_id")
+            if not membership and active_tenant_id:
+                membership = (
+                    TenantMembership.objects.select_related("organization", "organization__plan")
+                    .filter(user=request.user, is_active=True, organization_id=active_tenant_id)
+                    .first()
+                )
+            if not membership:
+                membership = (
+                    TenantMembership.objects.select_related("organization", "organization__plan")
+                    .filter(user=request.user, is_active=True)
+                    .order_by("organization__name")
+                    .first()
+                )
+            if membership:
+                request.tenant_membership = membership
+                request.tenant = membership.organization
+            elif request.user.is_superuser:
+                request.tenant = TenantOrganization.objects.select_related("plan").order_by("name").first()
+        return self.get_response(request)
+
+
 class PermanentLoginMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

@@ -190,6 +190,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'core.middleware.PermanentLoginMiddleware',
+    'core.middleware.SaaSTenantMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'core.middleware.DatabaseErrorMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -272,11 +273,13 @@ LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/'
 
+SAAS_PLATFORM_NAME = os.environ.get("SAAS_PLATFORM_NAME", "Sentinel ERP Cloud")
+SAAS_ENFORCE_TENANT_ACCESS = env_bool("SAAS_ENFORCE_TENANT_ACCESS", default=False)
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
-ERP_PERMANENT_LOGIN = env_bool("ERP_PERMANENT_LOGIN", default=True)
+ERP_PERMANENT_LOGIN = env_bool("ERP_PERMANENT_LOGIN", default=DEBUG and not IS_VERCEL)
 ERP_PERMANENT_LOGIN_USERNAME = os.environ.get("ERP_PERMANENT_LOGIN_USERNAME") or os.environ.get("DJANGO_SUPERUSER_USERNAME") or "admin"
 ERP_PERMANENT_LOGIN_PASSWORD = os.environ.get("ERP_PERMANENT_LOGIN_PASSWORD") or os.environ.get("DJANGO_SUPERUSER_PASSWORD") or ""
 ERP_PERMANENT_LOGIN_EMAIL = os.environ.get("ERP_PERMANENT_LOGIN_EMAIL") or os.environ.get("DJANGO_SUPERUSER_EMAIL") or ""

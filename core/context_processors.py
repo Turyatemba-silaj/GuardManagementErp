@@ -138,6 +138,8 @@ def sidebar_menu(request):
             "sidebar_active_department": "",
             "sidebar_nav_groups": [],
             "can_manage_payroll": False,
+            "current_tenant": None,
+            "current_tenant_membership": None,
         }
 
     groups = sidebar_grouped_registry(user)
@@ -154,4 +156,6 @@ def sidebar_menu(request):
         "sidebar_active_department": active_department,
         "sidebar_nav_groups": sidebar_nav_groups,
         "can_manage_payroll": can_manage_payroll,
+        "current_tenant": getattr(request, "tenant", None),
+        "current_tenant_membership": getattr(request, "tenant_membership", None),
     }
