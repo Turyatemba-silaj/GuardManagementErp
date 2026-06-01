@@ -3,8 +3,104 @@
 {% block title %}Automated Reconciliation{% endblock %}
 {% block page_label %}Automated Reconciliation{% endblock %}
 
+{% block extra_head %}
+{{ block.super }}
+<style>
+    .recon-page {
+        display: grid;
+        gap: 16px;
+    }
+    .recon-filter {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--sentinel-line);
+        background: #fff;
+    }
+    .recon-summary {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(132px, 1fr));
+        gap: 12px;
+        padding: 16px;
+        background: #f8fafc;
+        border-bottom: 1px solid var(--sentinel-line);
+    }
+    .recon-card {
+        min-height: 108px;
+        padding: 14px;
+        display: grid;
+        align-content: space-between;
+        gap: 12px;
+        border: 1px solid #dbe3ec;
+        border-radius: 8px;
+        background: #fff;
+    }
+    .recon-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+    .recon-card i {
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #2563eb;
+        flex: 0 0 auto;
+    }
+    .recon-card strong {
+        display: block;
+        color: var(--sentinel-ink);
+        font-size: 23px;
+        line-height: 1;
+        font-weight: 850;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+    }
+    .recon-card span {
+        display: block;
+        margin-top: 7px;
+        color: var(--sentinel-muted);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+    }
+    .recon-card.is-ok { border-top: 3px solid #0f8b6f; }
+    .recon-card.is-warning { border-top: 3px solid #b7791f; }
+    .recon-card.is-danger { border-top: 3px solid #c2413a; }
+    .recon-card.is-info { border-top: 3px solid #2563eb; }
+    .recon-table td:nth-child(3) {
+        min-width: 220px;
+        white-space: normal;
+    }
+    .recon-table .amount-cell {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    .status-pill.is-red {
+        color: #991b1b;
+        background: #fef2f2;
+        border-color: #fecaca;
+    }
+    @media (max-width: 1200px) {
+        .recon-summary {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+    @media (max-width: 760px) {
+        .recon-summary {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<section class="panel">
+<section class="panel recon-page">
     <div class="panel-head">
         <div>
             {% block reconciliation_heading %}
@@ -14,7 +110,7 @@
         </div>
         {% include "core/accounting_nav.html" %}
     </div>
-    <form class="filter-form" method="get">
+    <form class="filter-form recon-filter" method="get">
         <div class="field">
             <label for="status">Status</label>
             <select id="status" name="status">
@@ -29,25 +125,43 @@
             <a class="btn btn-light" href="{{ request.path }}">Clear</a>
         {% endif %}
     </form>
-    <section class="metric-grid" aria-label="Reconciliation summary">
-        <article class="metric-card"><i class="fa-solid fa-circle-check"></i><div><strong>{{ summary.matched }}</strong><span>Matched</span></div></article>
-        <article class="metric-card"><i class="fa-solid fa-link-slash"></i><div><strong>{{ summary.missing }}</strong><span>Missing Posts</span></div></article>
-        <article class="metric-card"><i class="fa-solid fa-scale-unbalanced"></i><div><strong>{{ summary.difference }}</strong><span>Differences</span></div></article>
-        <article class="metric-card"><i class="fa-solid fa-triangle-exclamation"></i><div><strong>{{ summary.unbalanced }}</strong><span>Unbalanced</span></div></article>
-        <article class="metric-card"><i class="fa-solid fa-coins"></i><div><strong>{{ summary.expected }}</strong><span>Expected</span></div></article>
-        <article class="metric-card"><i class="fa-solid fa-code-compare"></i><div><strong>{{ summary.variance }}</strong><span>Variance</span></div></article>
+    <section class="recon-summary" aria-label="Reconciliation summary">
+        <article class="recon-card is-ok">
+            <div class="recon-card-head"><i class="fa-solid fa-circle-check"></i></div>
+            <div><strong>{{ summary.matched }}</strong><span>Matched</span></div>
+        </article>
+        <article class="recon-card is-danger">
+            <div class="recon-card-head"><i class="fa-solid fa-link-slash"></i></div>
+            <div><strong>{{ summary.missing }}</strong><span>Missing Posts</span></div>
+        </article>
+        <article class="recon-card is-warning">
+            <div class="recon-card-head"><i class="fa-solid fa-scale-unbalanced"></i></div>
+            <div><strong>{{ summary.difference }}</strong><span>Differences</span></div>
+        </article>
+        <article class="recon-card is-danger">
+            <div class="recon-card-head"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div><strong>{{ summary.unbalanced }}</strong><span>Unbalanced</span></div>
+        </article>
+        <article class="recon-card is-info">
+            <div class="recon-card-head"><i class="fa-solid fa-coins"></i></div>
+            <div><strong>{{ summary.expected }}</strong><span>Expected</span></div>
+        </article>
+        <article class="recon-card is-info">
+            <div class="recon-card-head"><i class="fa-solid fa-code-compare"></i></div>
+            <div><strong>{{ summary.variance }}</strong><span>Variance</span></div>
+        </article>
     </section>
     <div class="table-wrap">
-        <table>
+        <table class="recon-table">
             <thead>
                 <tr>
                     <th>Module</th>
                     <th>Reference</th>
                     <th>Source</th>
-                    <th>Expected</th>
-                    <th>Posted Debit</th>
-                    <th>Posted Credit</th>
-                    <th>Variance</th>
+                    <th class="amount-cell">Expected</th>
+                    <th class="amount-cell">Posted Debit</th>
+                    <th class="amount-cell">Posted Credit</th>
+                    <th class="amount-cell">Variance</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -57,10 +171,10 @@
                         <td>{{ row.module }}</td>
                         <td>{{ row.reference }}</td>
                         <td>{{ row.source_label }}</td>
-                        <td>{{ row.expected_amount }}</td>
-                        <td>{{ row.posted_debit }}</td>
-                        <td>{{ row.posted_credit }}</td>
-                        <td>{{ row.difference }}</td>
+                        <td class="amount-cell">{{ row.expected_amount }}</td>
+                        <td class="amount-cell">{{ row.posted_debit }}</td>
+                        <td class="amount-cell">{{ row.posted_credit }}</td>
+                        <td class="amount-cell">{{ row.difference }}</td>
                         <td>
                             {% if row.status == "Matched" %}
                                 <span class="status-pill is-green">{{ row.status }}</span>
