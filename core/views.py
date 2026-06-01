@@ -6,6 +6,7 @@ import json
 import os
 import re
 import uuid
+import zipfile
 from xml.sax.saxutils import escape as xml_escape
 
 from django.conf import settings
@@ -866,6 +867,15 @@ PDF_MUTED = colors.HexColor("#667085")
 
 def money_display(value):
     return f"UGX {Decimal(value or 0):,.2f}"
+
+
+def response_pdf_bytes(response):
+    return bytes(response.content)
+
+
+def safe_filename(value):
+    value = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "").strip()).strip("-")
+    return value or "document"
 
 
 def pdf_styles():
@@ -2473,6 +2483,135 @@ def payslip_pdf(request, pk):
     response = HttpResponse(output.getvalue(), content_type="application/pdf")
     filename = f"payslip-{employee.company_number or employee.id}-{salary.pay_period_start}.pdf"
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+@user_passes_test(is_manager)
+def payment_receipt_pdf(request, pk):
+    payment = get_object_or_404(
+        models.Payment.objects.select_related("invoice__client", "employee"),
+        pk=pk,
+    )
+    target = payment.invoice.client.client_name if payment.invoice_id else payment.employee.full_name if payment.employee_id else "General Payment"
+    reference = payment.transaction_ref or f"PAY-{payment.id}"
+    output = BytesIO()
+    document = SimpleDocTemplate(output, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=76, bottomMargin=42)
+    styles = pdf_styles()
+    title = Table(
+        [
+            [
+                Paragraph("PAYMENT RECEIPT", styles["DocTitle"]),
+                Paragraph(f"Amount Received<br/><b>{money_display(payment.amount)}</b>", styles["Right"]),
+            ],
+            [
+                Paragraph(f"Receipt Ref: <b>{reference}</b>", styles["SmallMuted"]),
+                Paragraph(f"Date: <b>{payment.payment_date}</b>", styles["Right"]),
+            ],
+        ],
+        colWidths=[330, 190],
+    )
+    title.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    receipt_rows = [
+        ["Received From", target],
+        ["Payment Date", payment.payment_date],
+        ["Payment Method", payment.payment_method],
+        ["Transaction Ref", payment.transaction_ref or "-"],
+        ["Invoice", payment.invoice.invoice_number if payment.invoice_id else "-"],
+        ["Employee", payment.employee.full_name if payment.employee_id else "-"],
+    ]
+    allocation_rows = [
+        ["Amount", money_display(payment.amount)],
+        ["Invoice Balance", money_display(payment.invoice.balance_amount) if payment.invoice_id else "-"],
+        ["Remarks", payment.remarks or "-"],
+    ]
+    details = Table(
+        [
+            [
+                Paragraph("Receipt Details", styles["SectionTitle"]),
+                Paragraph("Allocation", styles["SectionTitle"]),
+            ],
+            [
+                key_value_table(receipt_rows, [92, 158]),
+                key_value_table(allocation_rows, [92, 158]),
+            ],
+        ],
+        colWidths=[260, 260],
+    )
+    details.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    elements = [
+        title,
+        Spacer(1, 16),
+        details,
+        Spacer(1, 20),
+        Paragraph("This receipt confirms that the amount above was recorded in the ERP payment register.", styles["SmallMuted"]),
+        Spacer(1, 24),
+        signature_table("Received By", "Customer / Employee"),
+    ]
+    document.build(
+        elements,
+        onFirstPage=pdf_header_footer("Payment Receipt"),
+        onLaterPages=pdf_header_footer("Payment Receipt"),
+    )
+    response = HttpResponse(output.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="receipt-{safe_filename(reference)}.pdf"'
+    return response
+
+
+@login_required
+@user_passes_test(is_manager)
+def bulk_document_download(request):
+    selected_month = request.POST.get("month") or request.GET.get("month") or timezone.localdate().isoformat()[:7]
+    selected_types = request.POST.getlist("document_types") or request.GET.getlist("document_types")
+    if not selected_types:
+        selected_types = ["payslips", "invoices", "receipts"]
+    selected_types = [doc_type for doc_type in selected_types if doc_type in {"payslips", "invoices", "receipts"}]
+    start, end = month_bounds(f"{selected_month}-01")
+
+    counts = {
+        "payslips": models.Salary.objects.filter(pay_period_start=start).count(),
+        "invoices": models.Invoice.objects.filter(invoice_date__range=(start, end)).count(),
+        "receipts": models.Payment.objects.filter(payment_date__range=(start, end)).count(),
+    }
+    if request.method != "POST":
+        return render(
+            request,
+            "core/bulk_document_download.html",
+            {
+                "selected_month": selected_month,
+                "selected_types": selected_types,
+                "counts": counts,
+            },
+        )
+
+    output = BytesIO()
+    added = 0
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        if "payslips" in selected_types:
+            salaries = models.Salary.objects.select_related("employee").filter(pay_period_start=start).order_by("employee__first_name", "employee__last_name")[:200]
+            for salary in salaries:
+                filename = f"payslips/{safe_filename(salary.employee.company_number or salary.employee_id)}-{salary.pay_period_start}.pdf"
+                archive.writestr(filename, response_pdf_bytes(payslip_pdf(request, salary.pk)))
+                added += 1
+        if "invoices" in selected_types:
+            invoices = models.Invoice.objects.filter(invoice_date__range=(start, end)).order_by("invoice_number")[:200]
+            for invoice in invoices:
+                filename = f"invoices/invoice-{safe_filename(invoice.invoice_number)}.pdf"
+                archive.writestr(filename, response_pdf_bytes(invoice_pdf(request, invoice.pk)))
+                added += 1
+        if "receipts" in selected_types:
+            payments = models.Payment.objects.filter(payment_date__range=(start, end)).order_by("payment_date", "id")[:200]
+            for payment in payments:
+                filename = f"receipts/receipt-{safe_filename(payment.transaction_ref or f'PAY-{payment.id}')}.pdf"
+                archive.writestr(filename, response_pdf_bytes(payment_receipt_pdf(request, payment.pk)))
+                added += 1
+
+    if not added:
+        messages.error(request, "No documents matched the selected period and document types.")
+        return redirect(f"{reverse('core:bulk_document_download')}?month={selected_month}")
+
+    response = HttpResponse(output.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="documents-{selected_month}.zip"'
     return response
 
 

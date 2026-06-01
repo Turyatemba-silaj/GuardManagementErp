@@ -13,6 +13,7 @@
         <div class="actions">
             <a class="btn btn-light" href="{% url 'core:payroll_export_excel' %}?month={{ selected_month }}">Export Excel</a>
             <a class="btn btn-light" href="{% url 'core:payroll_export_pdf' %}?month={{ selected_month }}">Export PDF</a>
+            <a class="btn btn-light" href="{% url 'core:bulk_document_download' %}?month={{ selected_month }}&document_types=payslips">Bulk Payslips</a>
             <a class="btn btn-light" href="{% url 'core:record_list' 'salaries' %}">Salary Records</a>
         </div>
     </div>

@@ -21,11 +21,25 @@
         {% elif can_add_record %}
             <div class="actions">
                 <a class="btn btn-light" href="{% url 'core:record_list_pdf' slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}">Export PDF</a>
+                {% if slug == "salaries" %}
+                    <a class="btn btn-light" href="{% url 'core:bulk_document_download' %}?document_types=payslips">Bulk Payslips</a>
+                {% elif slug == "invoices" %}
+                    <a class="btn btn-light" href="{% url 'core:bulk_document_download' %}?document_types=invoices">Bulk Invoices</a>
+                {% elif slug == "payments" %}
+                    <a class="btn btn-light" href="{% url 'core:bulk_document_download' %}?document_types=receipts">Bulk Receipts</a>
+                {% endif %}
                 <a class="btn btn-success" href="{% url 'core:record_add' slug %}">Add {{ config.title }}</a>
             </div>
         {% else %}
             <div class="actions">
                 <a class="btn btn-light" href="{% url 'core:record_list_pdf' slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}">Export PDF</a>
+                {% if slug == "salaries" %}
+                    <a class="btn btn-light" href="{% url 'core:bulk_document_download' %}?document_types=payslips">Bulk Payslips</a>
+                {% elif slug == "invoices" %}
+                    <a class="btn btn-light" href="{% url 'core:bulk_document_download' %}?document_types=invoices">Bulk Invoices</a>
+                {% elif slug == "payments" %}
+                    <a class="btn btn-light" href="{% url 'core:bulk_document_download' %}?document_types=receipts">Bulk Receipts</a>
+                {% endif %}
             </div>
         {% endif %}
     </div>
@@ -59,6 +73,8 @@
                             <div class="actions">
                                 {% if slug == "invoices" %}
                                     <a class="btn btn-light" href="{% url 'core:invoice_pdf' row.object.pk %}">PDF</a>
+                                {% elif slug == "payments" %}
+                                    <a class="btn btn-light" href="{% url 'core:payment_receipt_pdf' row.object.pk %}">Receipt PDF</a>
                                 {% endif %}
                                 {% if can_edit_record %}
                                     <a class="btn btn-warning" href="{% url 'core:record_edit' slug row.object.pk %}">Edit</a>

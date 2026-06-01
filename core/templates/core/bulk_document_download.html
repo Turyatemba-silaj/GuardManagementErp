@@ -1,0 +1,98 @@
+{% extends "core/base.html" %}
+
+{% block title %}Bulk PDF Documents{% endblock %}
+{% block page_label %}Bulk PDF Documents{% endblock %}
+
+{% block extra_head %}
+{{ block.super }}
+<style>
+    .document-bundle {
+        display: grid;
+        gap: 16px;
+    }
+    .bundle-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .bundle-option {
+        min-height: 112px;
+        padding: 14px;
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        background: #fff;
+        display: grid;
+        gap: 8px;
+    }
+    .bundle-option label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        font-size: 14px;
+    }
+    .bundle-option strong {
+        color: var(--sentinel-ink);
+    }
+    .bundle-option span {
+        color: var(--sentinel-muted);
+        font-size: 12px;
+        font-weight: 700;
+    }
+    @media (max-width: 840px) {
+        .bundle-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="panel document-bundle">
+    <div class="panel-head">
+        <div>
+            <h1>Bulk PDF Documents</h1>
+            <p class="muted">Download payslips, invoices, and payment receipts together as one ZIP file.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-light" href="{% url 'core:payroll' %}">Payroll</a>
+            <a class="btn btn-light" href="{% url 'core:record_list' 'invoices' %}">Invoices</a>
+            <a class="btn btn-light" href="{% url 'core:record_list' 'payments' %}">Payments</a>
+        </div>
+    </div>
+    <form class="form-card" method="post">
+        {% csrf_token %}
+        <div class="field">
+            <label for="month">Document Month</label>
+            <input id="month" name="month" type="month" value="{{ selected_month }}">
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit"><i class="fa-solid fa-file-zipper"></i> Download ZIP</button>
+        </div>
+        <div class="bundle-grid" style="grid-column: 1 / -1;">
+            <article class="bundle-option">
+                <label>
+                    <input type="checkbox" name="document_types" value="payslips" {% if "payslips" in selected_types %}checked{% endif %}>
+                    <strong>Payslips</strong>
+                </label>
+                <span>{{ counts.payslips }} document(s) for the selected month.</span>
+            </article>
+            <article class="bundle-option">
+                <label>
+                    <input type="checkbox" name="document_types" value="invoices" {% if "invoices" in selected_types %}checked{% endif %}>
+                    <strong>Invoices</strong>
+                </label>
+                <span>{{ counts.invoices }} document(s) dated in the selected month.</span>
+            </article>
+            <article class="bundle-option">
+                <label>
+                    <input type="checkbox" name="document_types" value="receipts" {% if "receipts" in selected_types %}checked{% endif %}>
+                    <strong>Payment Receipts</strong>
+                </label>
+                <span>{{ counts.receipts }} document(s) dated in the selected month.</span>
+            </article>
+        </div>
+        <p class="muted" style="grid-column: 1 / -1; margin: 0;">Each type is limited to 200 documents per download to keep the ZIP reliable.</p>
+    </form>
+</section>
+{% endblock %}
