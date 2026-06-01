@@ -1370,12 +1370,13 @@ def reconciliation_status(expected_amount, posted):
     return "Matched", Decimal("0.00")
 
 
-def reconciliation_row(module, reference, source_label, expected_amount, posted):
+def reconciliation_row(module, reference, source_label, expected_amount, posted, source_date=None):
     status, difference = reconciliation_status(expected_amount, posted)
     return {
         "module": module,
         "reference": reference,
         "source_label": source_label,
+        "source_date": source_date,
         "expected_amount": expected_amount,
         "posted_debit": posted["debit"] if posted else Decimal("0.00"),
         "posted_credit": posted["credit"] if posted else Decimal("0.00"),
@@ -1396,6 +1397,7 @@ def build_reconciliation_rows():
                 invoice.invoice_number,
                 invoice.total_amount,
                 journal_entry_totals(reference),
+                invoice.invoice_date,
             )
         )
     for payment in models.Payment.objects.select_related("invoice", "employee").order_by("-payment_date", "id"):
@@ -1408,6 +1410,7 @@ def build_reconciliation_rows():
                 target,
                 payment.amount,
                 journal_entry_totals(reference),
+                payment.payment_date,
             )
         )
     for expense in models.Expense.objects.order_by("-expense_date", "id"):
@@ -1419,6 +1422,7 @@ def build_reconciliation_rows():
                 expense.category,
                 expense.amount,
                 journal_entry_totals(reference),
+                expense.expense_date,
             )
         )
     for salary in models.Salary.objects.select_related("employee").order_by("-pay_period_start", "employee__first_name"):
@@ -1431,6 +1435,7 @@ def build_reconciliation_rows():
                 f"{salary.employee.full_name} - {salary.pay_period_start:%b %Y}",
                 expected,
                 journal_entry_totals(reference),
+                salary.pay_period_start,
             )
         )
     return rows
@@ -1535,17 +1540,25 @@ def reconciliation_summary(rows):
 def render_reconciliation_module(request, module, template_title):
     rows = reconciliation_rows_for(module)
     selected_status = request.GET.get("status", "").strip()
+    selected_month = request.GET.get("month", "").strip()
+    if selected_month:
+        rows = [
+            row for row in rows
+            if row.get("source_date") and row["source_date"].strftime("%Y-%m") == selected_month
+        ]
     if selected_status:
         rows = [row for row in rows if row["status"] == selected_status]
+    template_name = "core/payroll_reconciliation_report.html" if module == "Payroll" else "core/reconciliation_module_report.html"
     return render(
         request,
-        "core/reconciliation_module_report.html",
+        template_name,
         {
             "title": template_title,
             "module": module,
             "rows": rows,
             "summary": reconciliation_summary(rows),
             "selected_status": selected_status,
+            "selected_month": selected_month,
             "status_options": ["Matched", "Missing", "Difference", "Unbalanced"],
         },
     )

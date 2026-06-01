@@ -1,0 +1,215 @@
+{% extends "core/base.html" %}
+
+{% block title %}Payroll Reconciliation{% endblock %}
+{% block page_label %}Payroll Reconciliation{% endblock %}
+
+{% block extra_head %}
+{{ block.super }}
+<style>
+    .recon-shell {
+        display: grid;
+        gap: 16px;
+    }
+    .recon-hero {
+        display: grid;
+        grid-template-columns: minmax(280px, 1fr) auto;
+        gap: 16px;
+        align-items: start;
+    }
+    .recon-title {
+        display: grid;
+        gap: 6px;
+    }
+    .recon-title .eyebrow {
+        color: #2563eb;
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+    .recon-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+    .recon-filters {
+        display: grid;
+        grid-template-columns: minmax(180px, 220px) minmax(180px, 220px) auto auto;
+        gap: 10px;
+        align-items: end;
+    }
+    .control-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .control-card {
+        min-height: 104px;
+        padding: 14px;
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        background: #fff;
+        display: grid;
+        gap: 8px;
+    }
+    .control-card span {
+        color: var(--sentinel-muted);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+    }
+    .control-card strong {
+        color: var(--sentinel-ink);
+        font-size: 24px;
+        line-height: 1;
+    }
+    .control-card.is-exception {
+        border-top: 3px solid #c2413a;
+    }
+    .control-card.is-ok {
+        border-top: 3px solid #0f8b6f;
+    }
+    .control-card.is-info {
+        border-top: 3px solid #2563eb;
+    }
+    .recon-table th,
+    .recon-table td {
+        white-space: nowrap;
+    }
+    .recon-table td:nth-child(2) {
+        min-width: 220px;
+        white-space: normal;
+    }
+    .amount-cell {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+    .review-note {
+        padding: 12px 14px;
+        border: 1px solid #dbeafe;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1e3a8a;
+        font-weight: 700;
+    }
+    @media (max-width: 980px) {
+        .recon-hero,
+        .recon-filters,
+        .control-grid {
+            grid-template-columns: 1fr;
+        }
+        .recon-toolbar {
+            justify-content: flex-start;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="panel recon-shell">
+    <div class="panel-head recon-hero">
+        <div class="recon-title">
+            <span class="eyebrow">Payroll Control Account</span>
+            <h1>Payroll Reconciliation</h1>
+            <p class="muted">Review payroll source totals against posted journal entries before closing the pay period.</p>
+        </div>
+        <div class="recon-toolbar">
+            <a class="btn btn-light" href="{% url 'core:payroll' %}"><i class="fa-solid fa-money-check-dollar"></i> Payroll</a>
+            <a class="btn btn-light" href="{% url 'core:general_ledger' %}"><i class="fa-solid fa-book"></i> General Ledger</a>
+            <a class="btn btn-primary" href="{% url 'core:reconciliation_report' %}"><i class="fa-solid fa-code-compare"></i> All Reconciliation</a>
+        </div>
+    </div>
+
+    <form class="filter-form recon-filters" method="get">
+        <div class="field">
+            <label for="month">Payroll Month</label>
+            <input id="month" name="month" type="month" value="{{ selected_month }}">
+        </div>
+        <div class="field">
+            <label for="status">Reconciliation Status</label>
+            <select id="status" name="status">
+                <option value="">All statuses</option>
+                {% for status in status_options %}
+                    <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button class="btn btn-primary" type="submit"><i class="fa-solid fa-filter"></i> Apply</button>
+        {% if selected_status or selected_month %}
+            <a class="btn btn-light" href="{{ request.path }}"><i class="fa-solid fa-rotate-left"></i> Reset</a>
+        {% endif %}
+    </form>
+
+    <section class="control-grid" aria-label="Payroll reconciliation summary">
+        <article class="control-card is-ok">
+            <span>Matched payroll runs</span>
+            <strong>{{ summary.matched }}</strong>
+            <small class="muted">Source and journal totals agree.</small>
+        </article>
+        <article class="control-card is-exception">
+            <span>Open exceptions</span>
+            <strong>{{ summary.missing|add:summary.difference|add:summary.unbalanced }}</strong>
+            <small class="muted">Missing, different, or unbalanced postings.</small>
+        </article>
+        <article class="control-card is-info">
+            <span>Payroll source total</span>
+            <strong>{{ summary.expected }}</strong>
+            <small class="muted">Gross pay plus employer NSSF.</small>
+        </article>
+        <article class="control-card is-info">
+            <span>Net variance</span>
+            <strong>{{ summary.variance }}</strong>
+            <small class="muted">Expected less posted debit.</small>
+        </article>
+    </section>
+
+    <div class="review-note">
+        Reconciliation standard: every payroll run should have a posted, balanced journal entry with equal debit and credit totals matching the payroll source total.
+    </div>
+
+    <div class="table-wrap">
+        <table class="recon-table">
+            <thead>
+                <tr>
+                    <th>Period</th>
+                    <th>Employee / Payroll Batch</th>
+                    <th>Reference</th>
+                    <th class="amount-cell">Source Total</th>
+                    <th class="amount-cell">Posted Debit</th>
+                    <th class="amount-cell">Posted Credit</th>
+                    <th class="amount-cell">Variance</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{% if row.source_date %}{{ row.source_date|date:"M Y" }}{% else %}-{% endif %}</td>
+                        <td>{{ row.source_label }}</td>
+                        <td>{{ row.reference }}</td>
+                        <td class="amount-cell">{{ row.expected_amount }}</td>
+                        <td class="amount-cell">{{ row.posted_debit }}</td>
+                        <td class="amount-cell">{{ row.posted_credit }}</td>
+                        <td class="amount-cell">{{ row.difference }}</td>
+                        <td>
+                            {% if row.status == "Matched" %}
+                                <span class="status-pill is-green">{{ row.status }}</span>
+                            {% elif row.status == "Missing" %}
+                                <span class="status-pill is-red">{{ row.status }}</span>
+                            {% else %}
+                                <span class="status-pill is-blue">{{ row.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr class="empty-row">
+                        <td colspan="8">No payroll reconciliation records found for the selected filters.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
