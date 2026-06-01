@@ -6,6 +6,7 @@ import json
 import os
 import re
 import uuid
+from xml.sax.saxutils import escape as xml_escape
 
 from django.conf import settings
 from django.contrib import messages
@@ -114,6 +115,46 @@ def column_value(obj, column):
     if callable(display_method):
         return display_method()
     return getattr(obj, column, "")
+
+
+def stringify_cell(value):
+    if value in (None, ""):
+        return "-"
+    if isinstance(value, Decimal):
+        return f"{value:,.2f}"
+    if hasattr(value, "isoformat") and not isinstance(value, str):
+        try:
+            return value.isoformat()
+        except TypeError:
+            pass
+    return str(value)
+
+
+def record_queryset_for_request(request, slug, config):
+    queryset = scoped_queryset(request.user, slug, config.model.objects.all())
+    search_query = request.GET.get("q", "").strip()
+    if not search_query:
+        return queryset, search_query
+
+    search_text = search_query.lower()
+    return [
+        obj
+        for obj in queryset
+        if search_text in str(obj).lower()
+        or any(search_text in str(column_value(obj, column)).lower() for column in config.columns)
+    ], search_query
+
+
+def record_rows(queryset, columns, limit=200):
+    rows = []
+    for obj in queryset[:limit]:
+        rows.append(
+            {
+                "object": obj,
+                "values": [column_value(obj, column) for column in columns],
+            }
+        )
+    return rows
 
 
 def scoped_queryset(user, slug, queryset):
@@ -2440,26 +2481,8 @@ def record_list(request, slug):
     config = get_model_config(slug)
     if not can_manage_slug(request.user, slug):
         return HttpResponseForbidden("You do not have permission to access this page.")
-    queryset = scoped_queryset(request.user, slug, config.model.objects.all())
-    search_query = request.GET.get("q", "").strip()
-    rows = []
-
-    if search_query:
-        search_text = search_query.lower()
-        queryset = [
-            obj
-            for obj in queryset
-            if search_text in str(obj).lower()
-            or any(search_text in str(column_value(obj, column)).lower() for column in config.columns)
-        ]
-
-    for obj in queryset[:200]:
-        rows.append(
-            {
-                "object": obj,
-                "values": [column_value(obj, column) for column in config.columns],
-            }
-        )
+    queryset, search_query = record_queryset_for_request(request, slug, config)
+    rows = record_rows(queryset, config.columns)
 
     return render(
         request,
@@ -2476,6 +2499,72 @@ def record_list(request, slug):
             "can_delete_record": is_manager(request.user) or is_supervisor(request.user) or has_model_perm(request.user, slug, "delete"),
         },
     )
+
+
+@login_required
+def record_list_pdf(request, slug):
+    config = get_model_config(slug)
+    if not can_manage_slug(request.user, slug):
+        return HttpResponseForbidden("You do not have permission to export this report.")
+
+    queryset, search_query = record_queryset_for_request(request, slug, config)
+    rows = record_rows(queryset, config.columns)
+    styles = pdf_styles()
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        rightMargin=24,
+        leftMargin=24,
+        topMargin=72,
+        bottomMargin=42,
+    )
+    elements = [
+        Paragraph(f"{xml_escape(config.title)} Report", styles["DocTitle"]),
+        Paragraph(f"Department: {xml_escape(config.department)}", styles["SmallMuted"]),
+        Paragraph(f"Generated: {timezone.localtime(timezone.now()):%Y-%m-%d %H:%M}", styles["SmallMuted"]),
+    ]
+    if search_query:
+        elements.append(Paragraph(f"Search filter: {xml_escape(search_query)}", styles["SmallMuted"]))
+    elements.extend(
+        [
+            Spacer(1, 10),
+            key_value_table(
+                [
+                    ["Records shown", len(rows)],
+                    ["Report limit", "200 rows"],
+                ],
+                [110, 160],
+            ),
+            Spacer(1, 12),
+        ]
+    )
+
+    headers = [column_label(column) for column in config.columns]
+    data = [[Paragraph(xml_escape(header), styles["SmallMuted"]) for header in headers]]
+    max_text_length = 90 if len(headers) <= 8 else 55
+    for row in rows:
+        data.append(
+            [
+                Paragraph(xml_escape(stringify_cell(value)[:max_text_length]), styles["SmallMuted"])
+                for value in row["values"]
+            ]
+        )
+    if not rows:
+        data.append([Paragraph("No records found.", styles["SmallMuted"])] + ["" for _ in headers[1:]])
+
+    available_width = landscape(A4)[0] - document.leftMargin - document.rightMargin
+    col_widths = [available_width / max(len(headers), 1)] * max(len(headers), 1)
+    elements.append(styled_table(data, col_widths=col_widths))
+    elements.extend([Spacer(1, 18), signature_table()])
+    document.build(
+        elements,
+        onFirstPage=pdf_header_footer(f"{config.title} Report"),
+        onLaterPages=pdf_header_footer(f"{config.title} Report"),
+    )
+    response = HttpResponse(output.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{slug}-report.pdf"'
+    return response
 
 
 @login_required

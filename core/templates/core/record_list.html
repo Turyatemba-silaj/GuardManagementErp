@@ -11,6 +11,7 @@
         </div>
         {% if slug == "deployments" %}
             <div class="actions">
+                <a class="btn btn-light" href="{% url 'core:record_list_pdf' slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}">Export PDF</a>
                 <a class="btn btn-light" href="{% url 'core:deployments_export_excel' %}">Export Excel</a>
                 <a class="btn btn-light" href="{% url 'core:deployments_import_excel' %}">Import Excel</a>
                 {% if can_add_record %}
@@ -18,7 +19,14 @@
                 {% endif %}
             </div>
         {% elif can_add_record %}
-            <a class="btn btn-success" href="{% url 'core:record_add' slug %}">Add {{ config.title }}</a>
+            <div class="actions">
+                <a class="btn btn-light" href="{% url 'core:record_list_pdf' slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}">Export PDF</a>
+                <a class="btn btn-success" href="{% url 'core:record_add' slug %}">Add {{ config.title }}</a>
+            </div>
+        {% else %}
+            <div class="actions">
+                <a class="btn btn-light" href="{% url 'core:record_list_pdf' slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}">Export PDF</a>
+            </div>
         {% endif %}
     </div>
     <div class="toolbar">

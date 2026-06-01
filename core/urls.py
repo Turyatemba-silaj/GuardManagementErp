@@ -40,6 +40,7 @@ urlpatterns = [
     path("contracts/<int:pk>/invoice-data/", views.contract_invoice_data, name="contract_invoice_data"),
     path("clients/<int:pk>/contract-requirement-data/", views.client_contract_requirement_data, name="client_contract_requirement_data"),
     path("records/<slug:slug>/", views.record_list, name="record_list"),
+    path("records/<slug:slug>/pdf/", views.record_list_pdf, name="record_list_pdf"),
     path("records/<slug:slug>/add/", views.record_create, name="record_add"),
     path("records/<slug:slug>/<int:pk>/edit/", views.record_update, name="record_edit"),
     path("records/<slug:slug>/<int:pk>/delete/", views.record_delete, name="record_delete"),
