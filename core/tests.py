@@ -150,6 +150,36 @@ class EnvSuperuserBackendTests(TestCase):
         self.assertIn("sessionid", self.client.cookies)
 
 
+class PermanentLoginMiddlewareTests(TestCase):
+    @override_settings(
+        ERP_PERMANENT_LOGIN=True,
+        ERP_PERMANENT_LOGIN_USERNAME="always-admin",
+        ERP_PERMANENT_LOGIN_PASSWORD="",
+        ERP_PERMANENT_LOGIN_EMAIL="admin@example.com",
+        ERP_PERMANENT_LOGIN_AGE=315360000,
+    )
+    def test_protected_pages_open_without_credentials(self):
+        response = self.client.get(reverse("core:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.get(username="always-admin")
+        self.assertTrue(user.is_superuser)
+        self.assertTrue(user.is_staff)
+        self.assertGreaterEqual(int(self.client.session.get_expiry_age()), settings.ERP_PERMANENT_LOGIN_AGE - 5)
+
+    @override_settings(
+        ERP_PERMANENT_LOGIN=True,
+        ERP_PERMANENT_LOGIN_USERNAME="always-admin",
+        ERP_PERMANENT_LOGIN_PASSWORD="",
+        ERP_PERMANENT_LOGIN_EMAIL="admin@example.com",
+    )
+    def test_login_page_redirects_when_permanent_login_is_active(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], settings.LOGIN_REDIRECT_URL)
+
+
 class AdminLoginRedirectTests(TestCase):
     def test_admin_login_redirects_to_dashboard_after_success(self):
         User.objects.create_user(

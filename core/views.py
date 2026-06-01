@@ -600,6 +600,8 @@ def healthz(request):
             "database_name": settings.DATABASES["default"].get("NAME", ""),
             "database_runtime_note": getattr(settings, "DATABASE_RUNTIME_NOTE", ""),
             "session_engine": getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"),
+            "permanent_login": getattr(settings, "ERP_PERMANENT_LOGIN", False),
+            "permanent_login_username": getattr(settings, "ERP_PERMANENT_LOGIN_USERNAME", ""),
             "env_superuser_username_configured": bool(env_username),
             "env_superuser_password_configured": bool(os.environ.get("DJANGO_SUPERUSER_PASSWORD")),
             "env_superuser_username": env_username,

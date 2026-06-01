@@ -5,6 +5,37 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 
 
+def ensure_superuser(username=None, password=None, email=""):
+    username = username or os.environ.get("DJANGO_SUPERUSER_USERNAME") or "admin"
+    password = password or os.environ.get("DJANGO_SUPERUSER_PASSWORD") or ""
+    email = email if email is not None else os.environ.get("DJANGO_SUPERUSER_EMAIL", "")
+
+    User = get_user_model()
+    user, created = User.objects.get_or_create(
+        username=username,
+        defaults={
+            "email": email,
+            "is_active": True,
+            "is_staff": True,
+            "is_superuser": True,
+        },
+    )
+    changed_fields = []
+    if password and (created or not user.check_password(password)):
+        user.set_password(password)
+        changed_fields.append("password")
+    if email and user.email != email:
+        user.email = email
+        changed_fields.append("email")
+    for field in ("is_active", "is_staff", "is_superuser"):
+        if not getattr(user, field):
+            setattr(user, field, True)
+            changed_fields.append(field)
+    if changed_fields:
+        user.save(update_fields=changed_fields)
+    return user
+
+
 class EnvSuperuserBackend(ModelBackend):
     def authenticate(self, request, username=None, password=None, **kwargs):
         env_username = os.environ.get("DJANGO_SUPERUSER_USERNAME")
@@ -20,27 +51,4 @@ class EnvSuperuserBackend(ModelBackend):
             return None
         if not secrets.compare_digest(str(password), env_password):
             return None
-        User = get_user_model()
-        user, created = User.objects.get_or_create(
-            username=env_username,
-            defaults={
-                "email": env_email,
-                "is_active": True,
-                "is_staff": True,
-                "is_superuser": True,
-            },
-        )
-        changed_fields = []
-        if created or not user.check_password(env_password):
-            user.set_password(env_password)
-            changed_fields.append("password")
-        if env_email and user.email != env_email:
-            user.email = env_email
-            changed_fields.append("email")
-        for field in ("is_active", "is_staff", "is_superuser"):
-            if not getattr(user, field):
-                setattr(user, field, True)
-                changed_fields.append(field)
-        if changed_fields:
-            user.save(update_fields=changed_fields)
-        return user
+        return ensure_superuser(username=env_username, password=env_password, email=env_email)

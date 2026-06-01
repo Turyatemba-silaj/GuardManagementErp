@@ -19,6 +19,7 @@ def login_without_database_writes(request, user, backend):
 
 
 class DatabaseSafeLoginView(LoginView):
+    redirect_authenticated_user = True
     redirect_field_name = REDIRECT_FIELD_NAME
     template_name = "registration/login.html"
 
@@ -32,6 +33,7 @@ class DatabaseSafeLoginView(LoginView):
 
 class HomeRedirectAdminLoginView(LoginView):
     authentication_form = AdminAuthenticationForm
+    redirect_authenticated_user = True
     redirect_field_name = REDIRECT_FIELD_NAME
     template_name = "admin/login.html"
 

@@ -189,6 +189,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.middleware.PermanentLoginMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'core.middleware.DatabaseErrorMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -275,6 +276,13 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
+ERP_PERMANENT_LOGIN = env_bool("ERP_PERMANENT_LOGIN", default=True)
+ERP_PERMANENT_LOGIN_USERNAME = os.environ.get("ERP_PERMANENT_LOGIN_USERNAME") or os.environ.get("DJANGO_SUPERUSER_USERNAME") or "admin"
+ERP_PERMANENT_LOGIN_PASSWORD = os.environ.get("ERP_PERMANENT_LOGIN_PASSWORD") or os.environ.get("DJANGO_SUPERUSER_PASSWORD") or ""
+ERP_PERMANENT_LOGIN_EMAIL = os.environ.get("ERP_PERMANENT_LOGIN_EMAIL") or os.environ.get("DJANGO_SUPERUSER_EMAIL") or ""
+ERP_PERMANENT_LOGIN_AGE = int(os.environ.get("ERP_PERMANENT_LOGIN_AGE", 10 * 365 * 24 * 60 * 60))
+SESSION_COOKIE_AGE = ERP_PERMANENT_LOGIN_AGE
+SESSION_SAVE_EVERY_REQUEST = ERP_PERMANENT_LOGIN
 if IS_VERCEL:
     SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
 DISABLE_LAST_LOGIN_UPDATE = env_bool("DJANGO_DISABLE_LAST_LOGIN_UPDATE", default=IS_VERCEL)

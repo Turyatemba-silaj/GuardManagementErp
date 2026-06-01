@@ -1,10 +1,34 @@
 from html import escape
 
+from django.conf import settings
+from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY
 from django.db import DatabaseError, OperationalError
 from django.http import HttpResponse
 from django.http import JsonResponse
+from django.middleware.csrf import rotate_token
 
+from .auth_backends import ensure_superuser
 from .db_runtime import ensure_writable_sqlite_database
+
+
+class PermanentLoginMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if getattr(settings, "ERP_PERMANENT_LOGIN", False) and not request.user.is_authenticated:
+            user = ensure_superuser(
+                username=getattr(settings, "ERP_PERMANENT_LOGIN_USERNAME", "admin"),
+                password=getattr(settings, "ERP_PERMANENT_LOGIN_PASSWORD", ""),
+                email=getattr(settings, "ERP_PERMANENT_LOGIN_EMAIL", ""),
+            )
+            request.session[SESSION_KEY] = str(user.pk)
+            request.session[BACKEND_SESSION_KEY] = "django.contrib.auth.backends.ModelBackend"
+            request.session[HASH_SESSION_KEY] = user.get_session_auth_hash()
+            request.session.set_expiry(getattr(settings, "ERP_PERMANENT_LOGIN_AGE", 315360000))
+            request.user = user
+            rotate_token(request)
+        return self.get_response(request)
 
 
 class DatabaseErrorMiddleware:
