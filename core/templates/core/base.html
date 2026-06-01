@@ -661,137 +661,176 @@
         h1 { font-size: 26px; line-height: 1.14; }
         h2 { font-size: 16px; }
         .erp-shell {
-            grid-template-columns: 286px minmax(0, 1fr);
+            grid-template-columns: 264px minmax(0, 1fr);
         }
         .left_col {
-            background:
-                linear-gradient(180deg, rgba(16, 185, 129, .12), transparent 260px),
-                linear-gradient(145deg, #10282b, #183d38 58%, #10282b);
-            border-right: 1px solid rgba(255, 255, 255, .08);
-            box-shadow: 16px 0 34px rgba(20, 44, 47, .12);
+            display: flex;
+            flex-direction: column;
+            background: #111827;
+            border-right: 1px solid rgba(15, 23, 42, .08);
+            box-shadow: 12px 0 30px rgba(15, 23, 42, .12);
             scrollbar-width: thin;
-            scrollbar-color: rgba(203, 213, 225, .42) transparent;
+            scrollbar-color: rgba(148, 163, 184, .42) transparent;
         }
         .site_title {
-            min-height: 78px;
-            padding: 0 18px;
-            border-bottom-color: rgba(255, 255, 255, .1);
+            min-height: 72px;
+            padding: 0 16px;
+            border-bottom-color: rgba(255, 255, 255, .08);
+            font-size: 17px;
         }
         .site_title i {
-            width: 42px;
-            height: 42px;
-            border: 1px solid rgba(110, 231, 183, .32);
+            width: 38px;
+            height: 38px;
+            border: 1px solid rgba(96, 165, 250, .35);
             border-radius: 8px;
-            background: rgba(232, 245, 241, .1);
-            color: #a7f3d0;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.16);
+            background: #1f2937;
+            color: #93c5fd;
+            box-shadow: none;
         }
         .site_title span:last-child {
-            line-height: 1.15;
+            min-width: 0;
+            line-height: 1.12;
         }
         .brand-kicker {
-            color: #a2b8b3;
+            color: #94a3b8;
             font-size: 10px;
-            letter-spacing: .12em;
+            letter-spacing: .1em;
         }
         .profile_info {
-            margin: 14px 14px 8px;
-            padding: 14px;
-            border-color: rgba(255,255,255,.12);
-            background: rgba(255, 255, 255, .07);
+            margin: 12px 12px 6px;
+            padding: 12px;
+            border-color: rgba(148, 163, 184, .2);
+            background: #172033;
             border-radius: 8px;
         }
-        .profile_info span { color: #b7c7c4; }
+        .profile_info span {
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+        }
+        .profile_info strong {
+            display: block;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #f8fafc;
+            font-size: 14px;
+        }
         .operator-status {
-            color: #d9f99d;
+            margin-top: 8px;
+            color: #bfdbfe;
+            font-size: 12px;
         }
         .operator-status::before {
-            background: #84cc16;
-            box-shadow: 0 0 0 4px rgba(132, 204, 22, .16);
+            width: 7px;
+            height: 7px;
+            background: #22c55e;
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, .16);
         }
         .menu_section {
-            padding: 12px;
+            flex: 1;
+            min-height: 0;
+            padding: 10px 10px 12px;
+            overflow-y: auto;
         }
         .menu_section h3 {
-            padding: 8px 8px 10px;
-            color: #a2b8b3;
-            letter-spacing: .12em;
+            padding: 8px 8px 9px;
+            color: #94a3b8;
+            letter-spacing: .1em;
+            font-size: 10px;
         }
         .department-menu {
-            gap: 7px;
-            padding: 0 2px 18px;
+            gap: 6px;
+            padding: 0 0 8px;
         }
         .department-group {
-            border-color: rgba(255, 255, 255, .1);
+            border: 1px solid transparent;
             border-radius: 8px;
-            background: rgba(255, 255, 255, .045);
+            background: transparent;
+            overflow: hidden;
         }
         .department-group[open] {
-            background: rgba(255, 255, 255, .075);
-            border-color: rgba(167, 243, 208, .22);
+            background: rgba(255, 255, 255, .035);
+            border-color: rgba(148, 163, 184, .14);
         }
         .department-group summary {
-            min-height: 44px;
-            padding: 10px 11px;
-            color: #edf7f4;
+            min-height: 42px;
+            padding: 9px 10px;
+            color: #cbd5e1;
+            font-size: 13px;
+            font-weight: 800;
+        }
+        .department-group summary::after {
+            color: #64748b;
+            font-size: 12px;
         }
         .department-group summary > i,
         .department-links i,
         .side-menu i {
-            color: #9ee6cf;
+            color: #93c5fd;
         }
         .department-group.is-active summary {
             color: #ffffff;
         }
         .department-count {
-            background: rgba(232, 245, 241, .12);
-            color: #d7ede7;
+            min-width: 22px;
+            min-height: 20px;
+            background: rgba(148, 163, 184, .14);
+            color: #cbd5e1;
+            font-size: 10px;
         }
         .department-links {
-            gap: 3px;
-            padding: 2px 7px 9px;
+            gap: 2px;
+            padding: 2px 6px 8px;
         }
         .department-links a,
         .side-menu a {
+            min-height: 36px;
+            padding: 8px 9px;
             border-radius: 7px;
-            color: #d5e1de;
-            transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+            color: #cbd5e1;
+            font-size: 13px;
+            transition: background .16s ease, border-color .16s ease, color .16s ease;
         }
         .department-links a:hover,
         .department-links a:focus,
         .side-menu a:hover,
         .side-menu a:focus {
-            background: rgba(232, 245, 241, .12);
-            border-color: rgba(232, 245, 241, .14);
+            background: rgba(255, 255, 255, .07);
+            border-color: rgba(148, 163, 184, .16);
             color: #ffffff;
         }
         .department-links a.active,
         .side-menu a.active {
-            background: #e8f5f1;
-            border-color: #e8f5f1;
-            color: #123331;
-            box-shadow: 0 10px 22px rgba(5, 46, 42, .18);
+            background: #f8fafc;
+            border-color: #f8fafc;
+            color: #111827;
+            box-shadow: none;
+            font-weight: 800;
         }
         .department-links a.active i,
         .side-menu a.active i {
-            color: #0f8b6f;
+            color: #2563eb;
         }
         .sidebar-footer {
-            margin: 0 14px 16px;
-            padding: 12px;
-            border: 1px solid rgba(255,255,255,.12);
+            margin: 0 12px 14px;
+            padding: 11px 12px;
+            border: 1px solid rgba(148, 163, 184, .18);
             border-radius: 8px;
-            background: rgba(3, 17, 19, .2);
-            color: #d7ede7;
+            background: #172033;
+            color: #cbd5e1;
             display: grid;
-            gap: 8px;
+            gap: 5px;
         }
         .sidebar-footer strong {
             font-size: 13px;
             color: #ffffff;
         }
         .sidebar-footer span {
-            color: #a2b8b3;
+            color: #94a3b8;
             font-size: 12px;
         }
         .right_col {
@@ -997,8 +1036,16 @@
                 <span><span class="brand-kicker">Command System</span>Sentinel ERP</span>
             </a>
             <div class="profile_info">
-                <span>Welcome,</span>
-                <strong>{% if request.user.is_authenticated %}{{ request.user.get_username }}{% else %}Guest{% endif %}</strong>
+                <span>{% if current_tenant %}Workspace{% else %}Signed in{% endif %}</span>
+                <strong>
+                    {% if current_tenant %}
+                        {{ current_tenant.name }}
+                    {% elif request.user.is_authenticated %}
+                        {{ request.user.get_username }}
+                    {% else %}
+                        Guest
+                    {% endif %}
+                </strong>
                 <div class="operator-status">Operator console online</div>
             </div>
             <nav class="menu_section" aria-label="Department navigation">
@@ -1027,7 +1074,7 @@
             </nav>
             <div class="sidebar-footer">
                 <strong><i class="fa-solid fa-headset"></i> Control Desk</strong>
-                <span>Sites, shifts, payroll, and finance in one secured workspace.</span>
+                <span>{% if request.user.is_authenticated %}{{ request.user.get_username }}{% else %}Guest access{% endif %}</span>
             </div>
         </aside>
         <section class="right_col">
