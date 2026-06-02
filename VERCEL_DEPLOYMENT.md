@@ -12,11 +12,25 @@ DJANGO_SECRET_KEY=<long-random-production-secret>
 DJANGO_ALLOWED_HOSTS=guard-management-erp.vercel.app,guard-management-9cjueoyro-turyatemba-silaj-s-projects.vercel.app
 DJANGO_CSRF_TRUSTED_ORIGINS=https://guard-management-erp.vercel.app,https://guard-management-9cjueoyro-turyatemba-silaj-s-projects.vercel.app
 DJANGO_SUPERUSER_USERNAME=siraje
-DJANGO_SUPERUSER_PASSWORD=<temporary-strong-password>
-DJANGO_SUPERUSER_EMAIL=<your-email>
+DJANGO_SUPERUSER_PASSWORD=siraje@2026
+DJANGO_SUPERUSER_EMAIL=siraje@example.com
+ERP_PERMANENT_LOGIN=false
 ```
 
 Vercel normally also provides `VERCEL=1` and `VERCEL_URL`; the settings file now reads those automatically. The explicit variables above are still recommended because they make the production host policy clear.
+
+## Live Login
+
+The local `db.sqlite3` password reset does not automatically update the live Vercel database/runtime. The live login is controlled by the `DJANGO_SUPERUSER_*` variables above. After setting or changing them in Vercel, redeploy the project.
+
+Use this login after redeploy:
+
+```text
+Username: siraje
+Password: siraje@2026
+```
+
+When the first matching login request reaches Vercel, `core.auth_backends.EnvSuperuserBackend` creates or updates that user and marks it active, staff, and superuser.
 
 ## How To Confirm It Worked
 
@@ -27,6 +41,8 @@ https://guard-management-erp.vercel.app/healthz/
 ```
 
 It should return JSON showing `debug: false`, the active session engine, allowed hosts, and whether the database can be opened.
+
+For the live login to work, the health response should also show the deployment superuser variables are configured. If either superuser flag is false, set `DJANGO_SUPERUSER_USERNAME` and `DJANGO_SUPERUSER_PASSWORD` in Vercel and redeploy.
 
 If a `DisallowedHost` page still shows:
 
