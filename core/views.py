@@ -3066,6 +3066,37 @@ def schedule_file_rows(uploaded_file):
     return worksheet_rows(worksheet), worksheet
 
 
+def day_number_from_header(value):
+    match = re.match(r"^(\d{1,2})(?:st|nd|rd|th)?$", str(value or "").strip().lower())
+    if not match:
+        return None
+    day = int(match.group(1))
+    return day if 1 <= day <= 31 else None
+
+
+def monthly_grid_day_columns(header_row):
+    columns = []
+    for index, value in enumerate(header_row):
+        day = day_number_from_header(value)
+        if day:
+            columns.append((index, day))
+    return columns
+
+
+def find_employee_for_schedule_upload(guard_value):
+    return models.Employee.objects.filter(
+        Q(company_number__iexact=guard_value)
+        | Q(work_card_uid__iexact=guard_value)
+        | Q(national_id__iexact=guard_value)
+        | Q(first_name__iexact=guard_value)
+        | Q(last_name__iexact=guard_value)
+    ).first()
+
+
+def find_site_for_schedule_upload(site_value):
+    return models.Site.objects.select_related("client").filter(Q(site_code__iexact=site_value)).first()
+
+
 def get_import_client():
     return models.Client.objects.get_or_create(
         client_name="Imported Duty Roster Client",
@@ -3254,6 +3285,147 @@ def upsert_guard_schedule_from_upload(employee, site, shift, shift_date, *, depl
         },
     )
     return schedule, created, ""
+
+
+def import_monthly_schedule_grid(rows, headers, *, roster_month, file_name="", uploaded_by=None, batch_reference=None):
+    batch_reference = batch_reference or str(uuid.uuid4())
+    month_start, month_end = month_date_range(roster_month)
+    day_columns = monthly_grid_day_columns(rows[0] if rows else [])
+    created_schedules = 0
+    updated_schedules = 0
+    off_rows = 0
+    skipped_rows = []
+
+    for row_number, row in enumerate(rows[1:], start=2):
+        if not any(row):
+            continue
+        guard_value = value_from_row(
+            row,
+            headers,
+            "guard_id",
+            "guard_company_number",
+            "company_number",
+            "employee_number",
+            "guard_badge",
+            "badge_number",
+            "guard",
+        )
+        site_value = value_from_row(row, headers, "site_code")
+        base_shift_value = value_from_row(row, headers, "shift", "shift_name")
+
+        if not guard_value and not site_value:
+            continue
+        employee = find_employee_for_schedule_upload(guard_value)
+        site = find_site_for_schedule_upload(site_value)
+        base_shift = (
+            models.Shift.objects.filter(Q(shift_name__iexact=base_shift_value) | Q(code__iexact=base_shift_value)).first()
+            if base_shift_value
+            else None
+        )
+        if not employee or not site:
+            message = f"{'guard not found' if not employee else ''} {'site not found' if not site else ''}".strip()
+            skipped_rows.append(f"Row {row_number}: {message}")
+            record_roster_attendance(
+                batch_reference=batch_reference,
+                file_name=file_name,
+                source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                source_row=row_number,
+                uploaded_by=uploaded_by,
+                import_status=models.RosterAttendance.ImportStatus.SKIPPED,
+                message=message,
+                employee=employee,
+                site=site,
+                shift=base_shift,
+                duty_code=base_shift_value,
+            )
+            continue
+
+        duty_dates = [
+            month_start.replace(day=day)
+            for column, day in day_columns
+            if column < len(row)
+            and str(row[column] or "").strip()
+            and not is_off_duty_code(row[column])
+            and day <= month_end.day
+        ]
+        deployment_start = min(duty_dates) if duty_dates else month_start
+        deployment_end = max(duty_dates) if duty_dates else month_end
+
+        for column, day in day_columns:
+            if column >= len(row) or day > month_end.day:
+                continue
+            duty_code = str(row[column] or "").strip().upper()
+            if not duty_code:
+                continue
+            shift_date = month_start.replace(day=day)
+            if is_off_duty_code(duty_code):
+                record_roster_attendance(
+                    batch_reference=batch_reference,
+                    file_name=file_name,
+                    source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                    source_row=row_number,
+                    uploaded_by=uploaded_by,
+                    import_status=models.RosterAttendance.ImportStatus.OFF,
+                    message="Off day from monthly scheduled-guard grid.",
+                    employee=employee,
+                    site=site,
+                    shift=base_shift,
+                    shift_date=shift_date,
+                    duty_code="O",
+                )
+                off_rows += 1
+                continue
+
+            shift = get_import_shift(duty_code or base_shift_value)
+            schedule, created, error_message = upsert_guard_schedule_from_upload(
+                employee,
+                site,
+                shift,
+                shift_date,
+                deployment_start=deployment_start,
+                deployment_end=deployment_end,
+                notes="Imported from monthly scheduled-guard grid.",
+            )
+            if error_message:
+                skipped_rows.append(f"Row {row_number} {shift_date}: {error_message}")
+                record_roster_attendance(
+                    batch_reference=batch_reference,
+                    file_name=file_name,
+                    source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                    source_row=row_number,
+                    uploaded_by=uploaded_by,
+                    import_status=models.RosterAttendance.ImportStatus.SKIPPED,
+                    message=error_message,
+                    employee=employee,
+                    site=site,
+                    shift=shift,
+                    shift_date=shift_date,
+                    duty_code=duty_code,
+                )
+                continue
+            if created:
+                created_schedules += 1
+                import_status = models.RosterAttendance.ImportStatus.CREATED
+            else:
+                updated_schedules += 1
+                import_status = models.RosterAttendance.ImportStatus.UPDATED
+            record_roster_attendance(
+                batch_reference=batch_reference,
+                file_name=file_name,
+                source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                source_row=row_number,
+                uploaded_by=uploaded_by,
+                import_status=import_status,
+                message="Imported from monthly scheduled-guard grid.",
+                employee=employee,
+                site=site,
+                shift=shift,
+                shift_date=shift_date,
+                schedule=schedule,
+                duty_code=duty_code,
+            )
+
+    return created_schedules, updated_schedules, off_rows, skipped_rows, batch_reference
 
 
 def roster_header_date(header, period_start, period_end):
@@ -3546,11 +3718,30 @@ def duty_roster_template(request):
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "Scheduled Guards"
-    worksheet.append(["guard_id", "site_code", "shift", "start_date", "end_date"])
-    worksheet.append(["G001", "S001", "D", "", ""])
-    worksheet.append(["G002", "S001", "N", "2026-05-01", "2026-05-31"])
-    worksheet.append(["G003", "S002", "Day", "2026-05-15", "2026-05-20"])
-    for column in ("A", "B", "C", "D", "E"):
+    _, month_end = month_date_range(timezone.localdate().strftime("%Y-%m"))
+    day_headers = []
+    weekday_row = ["", "", ""]
+    for day in range(1, 32):
+        suffix = "th"
+        if day % 10 == 1 and day != 11:
+            suffix = "st"
+        elif day % 10 == 2 and day != 12:
+            suffix = "nd"
+        elif day % 10 == 3 and day != 13:
+            suffix = "rd"
+        day_headers.append(f"{day}{suffix}")
+        if day <= month_end.day:
+            weekday_row.append(month_end.replace(day=day).strftime("%a").upper())
+        else:
+            weekday_row.append("")
+    worksheet.append(["guard_id", "site_code", "shift", *day_headers])
+    worksheet.append(weekday_row)
+    worksheet.append(["G001", "S001", "D", "D", "O", "D", "D", "D", "D", "D", "O", "D", "D", "D", "D", "D", "O"])
+    worksheet.append(["G002", "S001", "N", "N", "N", "N", "N", "O", "N", "N", "N", "N", "O", "N", "N", "N"])
+    worksheet.append(["G003", "S002", "D", "O", "D", "D", "D", "D", "D", "D", "D", "D", "D", "O", "D", "D"])
+    for column in range(1, 35):
+        worksheet.column_dimensions[worksheet.cell(row=1, column=column).column_letter].width = 12
+    for column in ("A", "B", "C"):
         worksheet.column_dimensions[column].width = 22
     output = BytesIO()
     workbook.save(output)
@@ -3646,6 +3837,29 @@ def upload_duty_roster(request):
                 "Missing required schedule columns: " + ", ".join(missing).replace("_", " "),
             )
             return redirect("core:upload_duty_roster")
+
+        if monthly_grid_day_columns(header_row):
+            created_schedules, updated_schedules, off_rows, skipped_rows, batch_reference = import_monthly_schedule_grid(
+                uploaded_rows,
+                headers,
+                roster_month=roster_month,
+                file_name=file_name,
+                uploaded_by=request.user,
+                batch_reference=batch_reference,
+            )
+            if created_schedules or updated_schedules or off_rows:
+                messages.success(
+                    request,
+                    (
+                        f"Monthly guard schedule imported: {created_schedules} schedules created, "
+                        f"{updated_schedules} updated, {off_rows} off days recorded. Batch: {batch_reference}"
+                    ),
+                )
+            else:
+                messages.error(request, "No monthly guard schedules were imported from this file.")
+            if skipped_rows:
+                messages.error(request, "Skipped rows: " + "; ".join(skipped_rows[:8]))
+            return redirect("core:attendances")
 
         created_schedules = 0
         updated_schedules = 0

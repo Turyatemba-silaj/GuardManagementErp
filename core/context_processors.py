@@ -55,7 +55,7 @@ def build_sidebar_nav(groups, can_manage_payroll, user):
         operations.extend(
             [
                 nav_item("Attendances", reverse("core:attendances"), "fa-calendar-check"),
-                nav_item("Upload Duty Roster", reverse("core:upload_duty_roster"), "fa-file-excel"),
+                nav_item("Upload Scheduled Guards", reverse("core:upload_duty_roster"), "fa-file-excel"),
             ]
         )
     operations.extend(operations_models)

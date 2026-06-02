@@ -22,13 +22,13 @@
             <label for="roster_file">Scheduled guard file</label>
             <input id="roster_file" name="roster_file" type="file" accept=".xlsx,.xlsm,.csv" required>
             <span class="helptext">
-                Use guard_id, site_code, and shift. Optional start_date/end_date limit the schedule range; blank dates use the full selected month.
+                Use guard_id, site_code, shift, and day columns 1st-31st. Enter D/N for duty and O for the weekly off day.
             </span>
         </div>
         <div class="field">
             <label for="roster_month">Roster month</label>
             <input id="roster_month" name="roster_month" type="month">
-            <span class="helptext">Rows without dates are scheduled for this entire month. Leave blank to use the current month.</span>
+            <span class="helptext">The day columns are mapped to this month. Leave blank to use the current month.</span>
         </div>
         <div class="table-wrap">
             <table style="min-width: 760px;">
@@ -37,17 +37,39 @@
                         <th>guard_id</th>
                         <th>site_code</th>
                         <th>shift</th>
-                        <th>start_date</th>
-                        <th>end_date</th>
+                        <th>1st</th>
+                        <th>2nd</th>
+                        <th>3rd</th>
+                        <th>4th</th>
+                        <th>5th</th>
+                        <th>6th</th>
+                        <th>7th</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td>MON</td>
+                        <td>TUE</td>
+                        <td>WED</td>
+                        <td>THUR</td>
+                        <td>FRI</td>
+                        <td>SAT</td>
+                        <td>SUN</td>
+                    </tr>
+                    <tr>
                         <td>G001</td>
                         <td>S001</td>
                         <td>D</td>
-                        <td></td>
-                        <td></td>
+                        <td>D</td>
+                        <td>O</td>
+                        <td>D</td>
+                        <td>D</td>
+                        <td>D</td>
+                        <td>D</td>
+                        <td>D</td>
                     </tr>
                 </tbody>
             </table>

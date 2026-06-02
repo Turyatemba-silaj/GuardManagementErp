@@ -1485,9 +1485,83 @@ class GuardSchedulingTests(TestCase):
         )
         workbook = load_workbook(BytesIO(response.content))
         worksheet = workbook.active
+        header = [cell.value for cell in worksheet[1]]
+        self.assertEqual(header[:6], ["guard_id", "site_code", "shift", "1st", "2nd", "3rd"])
+        self.assertEqual(header[-1], "31st")
+        self.assertEqual([cell.value for cell in worksheet[2]][:3], [None, None, None])
+
+    def test_monthly_grid_upload_creates_schedules_and_records_off_days(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["guard_id", "site_code", "shift", "1st", "2nd", "3rd"])
+        worksheet.append(["", "", "", "MON", "TUE", "WED"])
+        worksheet.append([self.guard.company_number, self.site.site_code, self.shift.code, "D", "O", "D"])
+        content = BytesIO()
+        workbook.save(content)
+        upload = SimpleUploadedFile(
+            "monthly-grid.xlsx",
+            content.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        response = self.client.post(
+            "/attendances/upload-roster/",
+            {"roster_file": upload, "roster_month": "2026-05"},
+        )
+
+        self.assertEqual(response.status_code, 302)
         self.assertEqual(
-            [cell.value for cell in worksheet[1]],
-            ["guard_id", "site_code", "shift", "start_date", "end_date"],
+            GuardSchedule.objects.filter(
+                employee=self.guard,
+                site=self.site,
+                shift=self.shift,
+                shift_date__range=("2026-05-01", "2026-05-03"),
+            ).count(),
+            2,
+        )
+        self.assertFalse(
+            GuardSchedule.objects.filter(
+                employee=self.guard,
+                site=self.site,
+                shift=self.shift,
+                shift_date="2026-05-02",
+            ).exists()
+        )
+        off_row = RosterAttendance.objects.get(shift_date="2026-05-02")
+        self.assertEqual(off_row.import_status, RosterAttendance.ImportStatus.OFF)
+        self.assertEqual(off_row.duty_code, "O")
+
+    def test_monthly_grid_upload_does_not_exceed_required_guards(self):
+        ContractSiteRequirement.objects.filter(site=self.site).update(required_guards=1)
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["guard_id", "site_code", "shift", "1st"])
+        worksheet.append(["", "", "", "MON"])
+        worksheet.append([self.guard.company_number, self.site.site_code, self.shift.code, "D"])
+        worksheet.append([self.replacement_guard.company_number, self.site.site_code, self.shift.code, "D"])
+        content = BytesIO()
+        workbook.save(content)
+        upload = SimpleUploadedFile(
+            "monthly-grid-limit.xlsx",
+            content.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        response = self.client.post(
+            "/attendances/upload-roster/",
+            {"roster_file": upload, "roster_month": "2026-05"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            GuardSchedule.objects.filter(site=self.site, shift=self.shift, shift_date="2026-05-01").count(),
+            1,
+        )
+        self.assertTrue(
+            RosterAttendance.objects.filter(
+                shift_date="2026-05-01",
+                import_status=RosterAttendance.ImportStatus.SKIPPED,
+            ).exists()
         )
 
     def test_scheduled_guard_upload_without_dates_creates_monthly_schedule(self):
