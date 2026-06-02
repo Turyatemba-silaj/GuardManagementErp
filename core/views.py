@@ -3736,9 +3736,14 @@ def duty_roster_template(request):
             weekday_row.append("")
     worksheet.append(["guard_id", "site_code", "shift", *day_headers])
     worksheet.append(weekday_row)
-    worksheet.append(["G001", "S001", "D", "D", "O", "D", "D", "D", "D", "D", "O", "D", "D", "D", "D", "D", "O"])
-    worksheet.append(["G002", "S001", "N", "N", "N", "N", "N", "O", "N", "N", "N", "N", "O", "N", "N", "N"])
-    worksheet.append(["G003", "S002", "D", "O", "D", "D", "D", "D", "D", "D", "D", "D", "D", "O", "D", "D"])
+
+    def monthly_duty_row(duty_code, off_day_numbers):
+        off_days = set(off_day_numbers)
+        return ["O" if day in off_days else duty_code for day in range(1, 32)]
+
+    worksheet.append(["G001", "S001", "D", *monthly_duty_row("D", {2, 8, 14, 20, 26})])
+    worksheet.append(["G002", "S001", "N", *monthly_duty_row("N", {5, 11, 17, 23, 29})])
+    worksheet.append(["G003", "S002", "D", *monthly_duty_row("D", {1, 12, 18, 24, 30})])
     for column in range(1, 35):
         worksheet.column_dimensions[worksheet.cell(row=1, column=column).column_letter].width = 12
     for column in ("A", "B", "C"):

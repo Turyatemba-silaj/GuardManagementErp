@@ -1489,6 +1489,10 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(header[:6], ["guard_id", "site_code", "shift", "1st", "2nd", "3rd"])
         self.assertEqual(header[-1], "31st")
         self.assertEqual([cell.value for cell in worksheet[2]][:3], [None, None, None])
+        first_guard_days = [cell.value for cell in worksheet[3]][3:]
+        self.assertEqual(len(first_guard_days), 31)
+        self.assertTrue(all(value in {"D", "O"} for value in first_guard_days))
+        self.assertEqual(first_guard_days[30], "D")
 
     def test_monthly_grid_upload_creates_schedules_and_records_off_days(self):
         workbook = Workbook()
