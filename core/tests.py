@@ -395,7 +395,7 @@ class ContractSiteRequirementFormTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         requirement = form.save()
 
-        self.assertEqual(requirement.site.site_code, "RCXXS0001")
+        self.assertEqual(requirement.site.site_code, "S001")
         self.assertEqual(requirement.rate_per_guard, Decimal("150000.00"))
         self.assertEqual(requirement.start_date.isoformat(), "2026-02-01")
         self.assertEqual(requirement.end_date.isoformat(), "2026-12-31")
@@ -2342,7 +2342,7 @@ class GuardSchedulingTests(TestCase):
 
 
 class SiteCodeTests(TestCase):
-    def test_site_code_is_generated_from_client_name(self):
+    def test_site_code_is_generated_incrementally(self):
         client = Client.objects.create(
             client_name="Central Plaza",
             contact_person="Sarah",
@@ -2363,8 +2363,8 @@ class SiteCodeTests(TestCase):
             city="Kampala",
         )
 
-        self.assertEqual(first_site.site_code, "CPXXS0001")
-        self.assertEqual(second_site.site_code, "CPXXS0002")
+        self.assertEqual(first_site.site_code, "S001")
+        self.assertEqual(second_site.site_code, "S002")
 
 
 class ResponsiveCrudPageTests(TestCase):

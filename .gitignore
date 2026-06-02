@@ -8,5 +8,6 @@ venv/
 media/
 staticfiles/
 *.log
+.codex-run/
 
 .vercel

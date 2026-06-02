@@ -210,17 +210,7 @@ class ContractSiteRequirementForm(SecureModelForm):
 
     @staticmethod
     def next_site_code(client):
-        prefix = models.Site.client_code_prefix(client.client_name)
-        existing_codes = models.Site.objects.filter(client=client, site_code__startswith=f"{prefix}S").values_list(
-            "site_code", flat=True
-        )
-        next_number = 1
-        for code in existing_codes:
-            try:
-                next_number = max(next_number, int(code.replace(f"{prefix}S", "", 1)) + 1)
-            except ValueError:
-                continue
-        return f"{prefix}S{next_number:04d}"
+        return models.Site.next_site_code()
 
     def apply_contract_initials(self, contract):
         self.fields["rate_per_guard"].initial = contract.billing_rate

@@ -182,19 +182,20 @@ class Site(TimeStampedModel):
             return words[0][:4].ljust(4, "X")
         return "".join(word[0] for word in words)[:4].ljust(4, "X")
 
+    @classmethod
+    def next_site_code(cls):
+        existing_codes = cls.objects.filter(site_code__regex=r"^S\d+$").values_list("site_code", flat=True)
+        next_number = 1
+        for code in existing_codes:
+            try:
+                next_number = max(next_number, int(code[1:]) + 1)
+            except (TypeError, ValueError):
+                continue
+        return f"S{next_number:03d}"
+
     def save(self, *args, **kwargs):
         if not self.site_code and self.client_id:
-            prefix = self.client_code_prefix(self.client.client_name)
-            existing_codes = Site.objects.filter(client=self.client, site_code__startswith=f"{prefix}S").values_list(
-                "site_code", flat=True
-            )
-            next_number = 1
-            for code in existing_codes:
-                try:
-                    next_number = max(next_number, int(code.replace(f"{prefix}S", "", 1)) + 1)
-                except ValueError:
-                    continue
-            self.site_code = f"{prefix}S{next_number:04d}"
+            self.site_code = self.next_site_code()
         super().save(*args, **kwargs)
 
     def __str__(self):
