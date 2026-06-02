@@ -11,10 +11,12 @@ DJANGO_DEBUG=false
 DJANGO_SECRET_KEY=<long-random-production-secret>
 DJANGO_ALLOWED_HOSTS=guard-management-erp.vercel.app,guard-management-9cjueoyro-turyatemba-silaj-s-projects.vercel.app
 DJANGO_CSRF_TRUSTED_ORIGINS=https://guard-management-erp.vercel.app,https://guard-management-9cjueoyro-turyatemba-silaj-s-projects.vercel.app
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<database>?sslmode=require
 DJANGO_SUPERUSER_USERNAME=siraje
 DJANGO_SUPERUSER_PASSWORD=siraje@2026
 DJANGO_SUPERUSER_EMAIL=siraje@example.com
 ERP_PERMANENT_LOGIN=false
+DJANGO_USE_SQLITE=false
 ```
 
 Vercel normally also provides `VERCEL=1` and `VERCEL_URL`; the settings file now reads those automatically. The explicit variables above are still recommended because they make the production host policy clear.
@@ -50,9 +52,11 @@ If a `DisallowedHost` page still shows:
 - `ALLOWED_HOSTS=['127.0.0.1', 'localhost', 'testserver']`, the latest code/env variables are not active.
 - The production domain must appear in `ALLOWED_HOSTS`.
 
-## Important Vercel Limitation
+## PostgreSQL Database
 
-This project currently defaults to SQLite. SQLite inside a Vercel deployment is not a reliable production database because serverless deployments have an immutable/ephemeral filesystem. Use PostgreSQL for production and configure:
+This project now defaults to PostgreSQL. SQLite is only available when `DJANGO_USE_SQLITE=true`, and that should not be enabled on the live Vercel server.
+
+Use one PostgreSQL URL in Vercel:
 
 ```text
 DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<database>?sslmode=require
@@ -67,6 +71,4 @@ python manage.py migrate
 python manage.py setup_admin_roles --assign-active-staff
 ```
 
-For short-term Vercel testing without PostgreSQL, the app uses signed-cookie sessions, disables the automatic `last_login` write, and copies the bundled SQLite database to `/tmp/erp.sqlite3` so admin and attendance writes do not fail with `attempt to write a readonly database`.
-
-That `/tmp` SQLite fallback is not durable production storage. Vercel can replace the runtime filesystem, so real production data still requires PostgreSQL.
+If you use a managed database such as Neon, Supabase, Railway, Render, or Vercel Postgres, copy its pooled connection string into `DATABASE_URL`, keep `sslmode=require`, then redeploy.

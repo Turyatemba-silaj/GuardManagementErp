@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 import shutil
+import sys
 import warnings
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse, unquote
@@ -123,6 +124,27 @@ def sqlite_runtime_config(config):
         return config
 
 
+def postgres_config_from_env():
+    options = {}
+    sslmode = os.environ.get("DJANGO_DB_SSLMODE")
+    if sslmode:
+        options["sslmode"] = sslmode
+    elif IS_VERCEL:
+        options["sslmode"] = "require"
+
+    config = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DJANGO_DB_NAME", "erp"),
+        "USER": os.environ.get("DJANGO_DB_USER", "postgres"),
+        "PASSWORD": os.environ.get("DJANGO_DB_PASSWORD", ""),
+        "HOST": os.environ.get("DJANGO_DB_HOST", "localhost"),
+        "PORT": os.environ.get("DJANGO_DB_PORT", "5432"),
+    }
+    if options:
+        config["OPTIONS"] = options
+    return config
+
+
 def database_config():
     global DATABASE_RUNTIME_NOTE
     database_url = (
@@ -133,6 +155,10 @@ def database_config():
     )
     if database_url:
         return database_from_url(database_url)
+
+    use_sqlite = env_bool("DJANGO_USE_SQLITE", default=("test" in sys.argv and not IS_VERCEL))
+    if not use_sqlite:
+        return postgres_config_from_env()
 
     engine = os.environ.get("DJANGO_DB_ENGINE", "django.db.backends.sqlite3")
     configured_name = os.environ.get("DJANGO_DB_NAME")
