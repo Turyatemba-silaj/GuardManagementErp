@@ -681,6 +681,15 @@ def healthz(request):
             "database_write_error": db_write_error,
             "database_engine": settings.DATABASES["default"].get("ENGINE", ""),
             "database_name": settings.DATABASES["default"].get("NAME", ""),
+            "database_host_configured": bool(settings.DATABASES["default"].get("HOST", "")),
+            "database_password_configured": bool(settings.DATABASES["default"].get("PASSWORD", "")),
+            "database_url_configured": bool(os.environ.get("DATABASE_URL")),
+            "postgres_url_configured": any(
+                bool(os.environ.get(name))
+                for name in ("POSTGRES_URL", "POSTGRES_URL_NON_POOLING", "POSTGRES_PRISMA_URL")
+            ),
+            "django_use_sqlite": os.environ.get("DJANGO_USE_SQLITE", ""),
+            "is_vercel": bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL")),
             "database_runtime_note": getattr(settings, "DATABASE_RUNTIME_NOTE", ""),
             "session_engine": getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"),
             "permanent_login": getattr(settings, "ERP_PERMANENT_LOGIN", False),

@@ -84,20 +84,20 @@ class DatabaseRuntimeTests(TestCase):
         self.assertTrue(changed)
         self.assertEqual(settings.DATABASES["default"]["NAME"].replace("\\", "/"), "/tmp/erp.sqlite3")
 
-    def test_vercel_sqlite_database_url_is_switched_to_tmp(self):
+    def test_vercel_sqlite_database_url_is_ignored_for_postgresql(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bundled_db = Path(temp_dir) / "db.sqlite3"
-            writable_db = Path(temp_dir) / "erp.sqlite3"
             bundled_db.write_bytes(b"")
             with (
                 patch.object(project_settings, "IS_VERCEL", True),
                 patch.object(project_settings, "BASE_DIR", Path(temp_dir)),
-                patch.dict(os.environ, {"DJANGO_SQLITE_TMP_NAME": str(writable_db)}, clear=False),
+                patch.dict(os.environ, {"DJANGO_DB_NAME": "erp", "DJANGO_DB_HOST": "db.example.com"}, clear=False),
             ):
                 config = project_settings.database_from_url(f"sqlite:///{bundled_db.as_posix()}")
 
-        self.assertEqual(config["ENGINE"], "django.db.backends.sqlite3")
-        self.assertEqual(Path(config["NAME"]), writable_db)
+        self.assertEqual(config["ENGINE"], "django.db.backends.postgresql")
+        self.assertEqual(config["NAME"], "erp")
+        self.assertEqual(config["HOST"], "db.example.com")
 
     def test_healthz_write_probe_does_not_create_persistent_table(self):
         response = self.client.get(reverse("core:healthz"))

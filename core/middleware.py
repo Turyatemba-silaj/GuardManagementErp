@@ -118,7 +118,7 @@ class DatabaseErrorMiddleware:
 
         message = (
             "The ERP database could not complete this request. "
-            "If this is running on Vercel with SQLite, authenticated workflows need a hosted database such as PostgreSQL."
+            "If this is running on Vercel, set DATABASE_URL to a hosted PostgreSQL database and run migrations."
         )
         if request.path.startswith("/api/") or "application/json" in request.headers.get("Accept", ""):
             return JsonResponse(

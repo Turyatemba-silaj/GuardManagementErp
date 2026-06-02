@@ -56,11 +56,19 @@ def https_origins(hosts):
 
 
 def database_from_url(url):
+    global DATABASE_RUNTIME_NOTE
     parsed = urlparse(url)
     scheme = parsed.scheme.lower()
     if scheme in {"postgres", "postgresql"}:
         engine = "django.db.backends.postgresql"
     elif scheme == "sqlite":
+        if IS_VERCEL:
+            DATABASE_RUNTIME_NOTE = (
+                "SQLite DATABASE_URL was ignored on Vercel. Configure DATABASE_URL with a hosted PostgreSQL URL."
+            )
+            return postgres_config_from_env()
+        if not env_bool("DJANGO_USE_SQLITE", default=False):
+            raise ValueError("SQLite DATABASE_URL is disabled. Configure PostgreSQL with DATABASE_URL.")
         engine = "django.db.backends.sqlite3"
     else:
         raise ValueError(f"Unsupported database URL scheme: {parsed.scheme}")
@@ -156,7 +164,13 @@ def database_config():
     if database_url:
         return database_from_url(database_url)
 
-    use_sqlite = env_bool("DJANGO_USE_SQLITE", default=("test" in sys.argv and not IS_VERCEL))
+    if IS_VERCEL:
+        DATABASE_RUNTIME_NOTE = (
+            "PostgreSQL is required on Vercel. Set DATABASE_URL to your hosted PostgreSQL connection string."
+        )
+        return postgres_config_from_env()
+
+    use_sqlite = env_bool("DJANGO_USE_SQLITE", default=("test" in sys.argv))
     if not use_sqlite:
         return postgres_config_from_env()
 
