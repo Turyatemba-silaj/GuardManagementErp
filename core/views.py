@@ -647,6 +647,7 @@ def healthz(request):
     env_username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "")
     env_user_exists = False
     env_user_active = False
+    tenant_count = None
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
@@ -667,6 +668,7 @@ def healthz(request):
             env_user = User.objects.filter(username=env_username).only("is_active").first()
             env_user_exists = env_user is not None
             env_user_active = bool(env_user and env_user.is_active)
+        tenant_count = models.TenantOrganization.objects.count()
     except Exception as error:
         db_error = str(error)
     return JsonResponse(
@@ -685,7 +687,7 @@ def healthz(request):
             "permanent_login_username": getattr(settings, "ERP_PERMANENT_LOGIN_USERNAME", ""),
             "saas_platform_name": getattr(settings, "SAAS_PLATFORM_NAME", ""),
             "saas_enforce_tenant_access": getattr(settings, "SAAS_ENFORCE_TENANT_ACCESS", False),
-            "tenant_count": models.TenantOrganization.objects.count(),
+            "tenant_count": tenant_count,
             "env_superuser_username_configured": bool(env_username),
             "env_superuser_password_configured": bool(os.environ.get("DJANGO_SUPERUSER_PASSWORD")),
             "env_superuser_username": env_username,
