@@ -206,6 +206,7 @@ def contract_required_guards(site, shift, shift_date):
     return site.required_guards_per_shift
 
 
+@login_required
 def home(request):
     return render(
         request,

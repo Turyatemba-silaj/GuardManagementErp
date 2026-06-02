@@ -248,6 +248,22 @@ class AdminLoginRedirectTests(TestCase):
         self.assertIn("sessionid", self.client.cookies)
 
 
+class PageLoginRequiredTests(TestCase):
+    def test_home_page_requires_login(self):
+        response = self.client.get(reverse("core:home"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(settings.LOGIN_URL, response["Location"])
+
+    def test_logged_in_user_can_open_home_page(self):
+        User.objects.create_user(username="home-user", password="temporary-pass", is_staff=True)
+        self.client.login(username="home-user", password="temporary-pass")
+
+        response = self.client.get(reverse("core:home"))
+
+        self.assertEqual(response.status_code, 200)
+
+
 class ActivityLogAdminTests(TestCase):
     def setUp(self):
         self.admin_user = User.objects.create_superuser(
