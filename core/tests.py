@@ -11,7 +11,7 @@ from django.contrib.auth import authenticate
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError, connections
+from django.db import IntegrityError, connection, connections
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -97,6 +97,16 @@ class DatabaseRuntimeTests(TestCase):
 
         self.assertEqual(config["ENGINE"], "django.db.backends.sqlite3")
         self.assertEqual(Path(config["NAME"]), writable_db)
+
+    def test_healthz_write_probe_does_not_create_persistent_table(self):
+        response = self.client.get(reverse("core:healthz"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["database_writable"])
+        with connection.cursor() as cursor:
+            table_names = connection.introspection.table_names(cursor)
+        self.assertNotIn("core_healthcheck_write", table_names)
+        self.assertNotIn("healthcheck_write_probe", table_names)
 
 
 class EnvSuperuserBackendTests(TestCase):
@@ -1477,8 +1487,83 @@ class GuardSchedulingTests(TestCase):
         worksheet = workbook.active
         self.assertEqual(
             [cell.value for cell in worksheet[1]],
-            ["site_code", "site_name", "shift", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            ["guard_id", "site_code", "shift", "start_date", "end_date"],
         )
+
+    def test_scheduled_guard_upload_without_dates_creates_monthly_schedule(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["guard_id", "site_code", "shift"])
+        worksheet.append([self.guard.company_number, self.site.site_code, self.shift.code])
+        content = BytesIO()
+        workbook.save(content)
+        upload = SimpleUploadedFile(
+            "scheduled-guards.xlsx",
+            content.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        response = self.client.post(
+            "/attendances/upload-roster/",
+            {"roster_file": upload, "roster_month": "2026-05"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            GuardSchedule.objects.filter(
+                employee=self.guard,
+                site=self.site,
+                shift=self.shift,
+                shift_date__range=("2026-05-01", "2026-05-31"),
+            ).count(),
+            31,
+        )
+        self.assertEqual(
+            RosterAttendance.objects.filter(
+                employee=self.guard,
+                site=self.site,
+                shift=self.shift,
+                import_status=RosterAttendance.ImportStatus.CREATED,
+            ).count(),
+            31,
+        )
+        deployment = Deployment.objects.get(
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            start_date="2026-05-01",
+        )
+        self.assertEqual(deployment.end_date.isoformat(), "2026-05-31")
+
+    def test_csv_scheduled_guard_upload_creates_monthly_schedule(self):
+        upload = SimpleUploadedFile(
+            "scheduled-guards.csv",
+            (
+                "guard_id,site_code,shift,start_date,end_date\n"
+                f"{self.guard.company_number},{self.site.site_code},{self.shift.code},2026-05-01,2026-05-03\n"
+            ).encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post("/attendances/upload-roster/", {"roster_file": upload})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            GuardSchedule.objects.filter(
+                employee=self.guard,
+                site=self.site,
+                shift=self.shift,
+                shift_date__range=("2026-05-01", "2026-05-03"),
+            ).count(),
+            3,
+        )
+        deployment = Deployment.objects.get(
+            employee=self.guard,
+            site=self.site,
+            shift=self.shift,
+            start_date="2026-05-01",
+        )
+        self.assertEqual(deployment.end_date.isoformat(), "2026-05-03")
 
     def test_roster_attendance_summary_pdf_downloads(self):
         self.client.get("/attendances/", {"site": self.site.id, "date": "2026-05-16"})

@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 DOCUMENT_EXTENSIONS = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png"}
 EXCEL_EXTENSIONS = {".xlsx", ".xlsm"}
+SCHEDULE_EXTENSIONS = EXCEL_EXTENSIONS | {".csv"}
 
 
 def file_extension(uploaded_file):
@@ -30,6 +31,15 @@ def validate_excel_upload(uploaded_file):
         allowed_extensions=EXCEL_EXTENSIONS,
         max_size=settings.MAX_EXCEL_UPLOAD_SIZE,
         label="Excel workbook",
+    )
+
+
+def validate_schedule_upload(uploaded_file):
+    validate_uploaded_file(
+        uploaded_file,
+        allowed_extensions=SCHEDULE_EXTENSIONS,
+        max_size=settings.MAX_EXCEL_UPLOAD_SIZE,
+        label="schedule file",
     )
 
 

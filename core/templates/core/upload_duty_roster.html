@@ -1,14 +1,14 @@
 {% extends "core/base.html" %}
 
-{% block title %}Upload Duty Roster{% endblock %}
-{% block page_label %}Upload Duty Roster{% endblock %}
+{% block title %}Upload Scheduled Guards{% endblock %}
+{% block page_label %}Upload Scheduled Guards{% endblock %}
 
 {% block content %}
 <section class="panel">
     <div class="panel-head">
         <div>
-            <h1>Upload Duty Roster</h1>
-            <p class="muted">Import Excel rows into guard schedules.</p>
+            <h1>Upload Scheduled Guards</h1>
+            <p class="muted">Import Excel or CSV rows into monthly guard schedules.</p>
         </div>
         <div class="actions">
             <a class="btn btn-success" href="{% url 'core:duty_roster_template' %}">Download Template</a>
@@ -19,43 +19,41 @@
     <form class="form-card" method="post" enctype="multipart/form-data" style="grid-template-columns: 1fr;">
         {% csrf_token %}
         <div class="field">
-            <label for="roster_file">Excel duty roster</label>
-            <input id="roster_file" name="roster_file" type="file" accept=".xlsx,.xlsm" required>
+            <label for="roster_file">Scheduled guard file</label>
+            <input id="roster_file" name="roster_file" type="file" accept=".xlsx,.xlsm,.csv" required>
             <span class="helptext">
-                Upload the monthly duty roster format with D/N/O duty codes, or a simple/Saracen roster.
+                Use guard_id, site_code, and shift. Optional start_date/end_date limit the schedule range; blank dates use the full selected month.
             </span>
         </div>
         <div class="field">
             <label for="roster_month">Roster month</label>
             <input id="roster_month" name="roster_month" type="month">
-            <span class="helptext">Used when the workbook has day numbers 1-31. Leave blank to use the current month.</span>
+            <span class="helptext">Rows without dates are scheduled for this entire month. Leave blank to use the current month.</span>
         </div>
         <div class="table-wrap">
             <table style="min-width: 760px;">
                 <thead>
                     <tr>
+                        <th>guard_id</th>
                         <th>site_code</th>
-                        <th>site_name</th>
                         <th>shift</th>
-                        <th>Mon</th>
-                        <th>Tue</th>
-                        <th>Wed</th>
+                        <th>start_date</th>
+                        <th>end_date</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
+                        <td>G001</td>
                         <td>S001</td>
-                        <td>Main Site</td>
                         <td>D</td>
-                        <td>O</td>
-                        <td>D</td>
-                        <td>N</td>
+                        <td></td>
+                        <td></td>
                     </tr>
                 </tbody>
             </table>
         </div>
         <div class="form-actions">
-            <button class="btn btn-success" type="submit">Upload Roster</button>
+            <button class="btn btn-success" type="submit">Upload Schedule</button>
         </div>
     </form>
 </section>
@@ -63,7 +61,7 @@
 <section class="panel">
     <div class="panel-head">
         <div>
-            <h2>Recent Roster Attendance Imports</h2>
+            <h2>Recent Schedule Imports</h2>
             <p class="muted">Imported rows are stored here and linked to guard schedules.</p>
         </div>
     </div>
@@ -95,7 +93,7 @@
                     </tr>
                 {% empty %}
                     <tr class="empty-row">
-                        <td colspan="8">No roster attendance imports yet.</td>
+                        <td colspan="8">No schedule imports yet.</td>
                     </tr>
                 {% endfor %}
             </tbody>

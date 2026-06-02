@@ -1,5 +1,7 @@
 import calendar
 from collections import defaultdict
+import csv
+from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
 import json
@@ -37,7 +39,7 @@ from .access import can_access_internal, can_manage_attendance, can_manage_slug,
 from .accounting import ensure_default_accounts, post_all_accounting
 from .crud import MODEL_REGISTRY, visible_grouped_registry
 from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm, SecureModelForm
-from .security import validate_excel_upload
+from .security import file_extension, validate_schedule_upload
 
 
 MODEL_FORM_EXCLUDES = {
@@ -603,19 +605,9 @@ def healthz(request):
             cursor.execute("SELECT 1")
             db_ok = cursor.fetchone()[0] == 1
             try:
-                if settings.DATABASES["default"].get("ENGINE") == "django.db.backends.sqlite3":
-                    cursor.execute(
-                        "CREATE TABLE IF NOT EXISTS core_healthcheck_write "
-                        "(id integer primary key autoincrement, checked_at text)"
-                    )
-                    cursor.execute("INSERT INTO core_healthcheck_write (checked_at) VALUES (%s)", [timezone.now().isoformat()])
-                    cursor.execute(
-                        "DELETE FROM core_healthcheck_write "
-                        "WHERE id NOT IN (SELECT id FROM core_healthcheck_write ORDER BY id DESC LIMIT 5)"
-                    )
-                else:
-                    cursor.execute("CREATE TEMP TABLE core_healthcheck_write (checked_at text)")
-                    cursor.execute("INSERT INTO core_healthcheck_write (checked_at) VALUES (%s)", [timezone.now().isoformat()])
+                cursor.execute("CREATE TEMP TABLE healthcheck_write_probe (checked_at text)")
+                cursor.execute("INSERT INTO healthcheck_write_probe (checked_at) VALUES (%s)", [timezone.now().isoformat()])
+                cursor.execute("DROP TABLE healthcheck_write_probe")
                 db_writable = True
             except Exception as error:
                 db_write_error = str(error)
@@ -3002,6 +2994,8 @@ def value_from_row(row, headers, *names):
     for name in names:
         index = headers.get(name)
         if index is not None:
+            if index >= len(row):
+                continue
             value = row[index]
             if value not in (None, ""):
                 return str(value).strip()
@@ -3012,6 +3006,8 @@ def date_from_row(row, headers, *names):
     for name in names:
         index = headers.get(name)
         if index is not None:
+            if index >= len(row):
+                continue
             value = row[index]
             if value in (None, ""):
                 continue
@@ -3021,6 +3017,53 @@ def date_from_row(row, headers, *names):
             if parsed:
                 return parsed
     return None
+
+
+def month_date_range(roster_month):
+    month_start = parse_date(f"{roster_month}-01") if roster_month else None
+    if not month_start:
+        month_start = timezone.localdate().replace(day=1)
+    month_end = month_start.replace(day=calendar.monthrange(month_start.year, month_start.month)[1])
+    return month_start, month_end
+
+
+def date_range_days(start, end):
+    current = start
+    while current <= end:
+        yield current
+        current += timedelta(days=1)
+
+
+def schedule_dates_from_row(row, headers, roster_month):
+    shift_date = date_from_row(row, headers, "shift_date", "date", "duty_date")
+    if shift_date:
+        return [shift_date]
+
+    start, month_end = month_date_range(roster_month)
+    start_date = date_from_row(row, headers, "start_date", "from_date")
+    end_date = date_from_row(row, headers, "end_date", "to_date")
+    start = start_date or start
+    end = end_date or month_end
+    if end < start:
+        return []
+    return list(date_range_days(start, end))
+
+
+def rows_from_csv_upload(uploaded_file):
+    content = uploaded_file.read().decode("utf-8-sig")
+    return list(csv.reader(content.splitlines()))
+
+
+def worksheet_rows(worksheet):
+    return list(worksheet.iter_rows(values_only=True))
+
+
+def schedule_file_rows(uploaded_file):
+    if file_extension(uploaded_file) == ".csv":
+        return rows_from_csv_upload(uploaded_file), None
+    workbook = load_workbook(uploaded_file, data_only=True)
+    worksheet = workbook.active
+    return worksheet_rows(worksheet), worksheet
 
 
 def get_import_client():
@@ -3162,6 +3205,55 @@ def record_roster_attendance(
         message=message,
         uploaded_by=uploaded_by if getattr(uploaded_by, "is_authenticated", False) else None,
     )
+
+
+def supervisor_for_site(site):
+    allocation = (
+        models.ZoneSiteAllocation.objects.filter(
+            site=site,
+            status=models.StatusChoices.ACTIVE,
+            end_date__isnull=True,
+        )
+        .select_related("zone__supervisor")
+        .first()
+    )
+    return allocation.zone.supervisor if allocation else None
+
+
+def upsert_guard_schedule_from_upload(employee, site, shift, shift_date, *, deployment_start, deployment_end, notes):
+    existing_schedule = models.GuardSchedule.objects.filter(
+        employee=employee,
+        site=site,
+        shift=shift,
+        shift_date=shift_date,
+    ).first()
+    if not existing_schedule and contract_schedule_limit_reached(site, shift, shift_date):
+        return None, False, contract_limit_message(site, shift, shift_date)
+
+    deployment, _created = models.Deployment.objects.update_or_create(
+        employee=employee,
+        site=site,
+        shift=shift,
+        start_date=deployment_start,
+        defaults={
+            "client": site.client,
+            "supervisor": supervisor_for_site(site),
+            "end_date": deployment_end,
+            "status": models.StatusChoices.ACTIVE,
+        },
+    )
+    schedule, created = models.GuardSchedule.objects.update_or_create(
+        deployment=deployment,
+        shift_date=shift_date,
+        defaults={
+            "employee": employee,
+            "site": site,
+            "shift": shift,
+            "status": models.GuardSchedule.ScheduleStatus.SCHEDULED,
+            "notes": notes,
+        },
+    )
+    return schedule, created, ""
 
 
 def roster_header_date(header, period_start, period_end):
@@ -3453,13 +3545,12 @@ def import_saracen_roster(worksheet, *, file_name="", uploaded_by=None, batch_re
 def duty_roster_template(request):
     workbook = Workbook()
     worksheet = workbook.active
-    worksheet.title = "Duty Roster"
-    worksheet.append(["site_code", "site_name", "shift", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
-    worksheet.append(["", "", "D", 1, 2, 3, 4, 5, 6, 7])
-    worksheet.append(["S001", "Main Site", "D", "O", "D", "D", "D", "D", "D", "D"])
-    worksheet.append(["", "Main Site", "D", "D", "O", "D", "D", "D", "D", "D"])
-    worksheet.append(["", "Main Site", "N", "N", "N", "O", "N", "N", "N", "N"])
-    for column in ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J"):
+    worksheet.title = "Scheduled Guards"
+    worksheet.append(["guard_id", "site_code", "shift", "start_date", "end_date"])
+    worksheet.append(["G001", "S001", "D", "", ""])
+    worksheet.append(["G002", "S001", "N", "2026-05-01", "2026-05-31"])
+    worksheet.append(["G003", "S002", "Day", "2026-05-15", "2026-05-20"])
+    for column in ("A", "B", "C", "D", "E"):
         worksheet.column_dimensions[column].width = 22
     output = BytesIO()
     workbook.save(output)
@@ -3478,36 +3569,34 @@ def upload_duty_roster(request):
     if request.method == "POST":
         roster_file = request.FILES.get("roster_file")
         if not roster_file:
-            messages.error(request, "Please choose an Excel duty roster to upload.")
+            messages.error(request, "Please choose an Excel or CSV scheduled-guard file to upload.")
             return redirect("core:upload_duty_roster")
         try:
-            validate_excel_upload(roster_file)
+            validate_schedule_upload(roster_file)
         except ValidationError as error:
             messages.error(request, " ".join(error.messages))
             return redirect("core:upload_duty_roster")
         try:
-            workbook = load_workbook(roster_file, data_only=True)
-            worksheet = workbook.active
+            uploaded_rows, worksheet = schedule_file_rows(roster_file)
         except Exception:
-            messages.error(request, "The uploaded file could not be read as an Excel workbook.")
+            messages.error(request, "The uploaded file could not be read as an Excel workbook or CSV file.")
             return redirect("core:upload_duty_roster")
 
         batch_reference = str(uuid.uuid4())
         file_name = roster_file.name
         roster_month = request.POST.get("roster_month") or timezone.localdate().strftime("%Y-%m")
-        header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), [])
+        header_row = uploaded_rows[0] if uploaded_rows else []
         headers = {normalized_header(value): index for index, value in enumerate(header_row)}
         required_groups = [
-            ("guard_company_number", "company_number", "employee_number", "guard_badge", "badge_number", "guard"),
-            ("site_code", "site", "site_name"),
+            ("guard_id", "guard_company_number", "company_number", "employee_number", "guard_badge", "badge_number", "guard"),
+            ("site_code",),
             ("shift", "shift_name"),
-            ("shift_date", "date", "duty_date"),
         ]
         missing = [group[0] for group in required_groups if not any(name in headers for name in group)]
-        if missing:
+        if missing and worksheet is not None:
             has_saracen_blocks = any(
                 "site roster for" in str(row[0] or "").lower()
-                for row in worksheet.iter_rows(values_only=True)
+                for row in uploaded_rows
                 if row
             )
             if has_saracen_blocks:
@@ -3546,23 +3635,29 @@ def upload_duty_roster(request):
                 if skipped_rows:
                     messages.error(request, "Skipped rows: " + "; ".join(skipped_rows[:8]))
                 return redirect("core:upload_duty_roster")
-            else:
-                messages.error(
-                    request,
-                    "Missing required roster columns: " + ", ".join(missing).replace("_", " "),
-                )
-                return redirect("core:upload_duty_roster")
+            messages.error(
+                request,
+                "Missing required schedule columns: " + ", ".join(missing).replace("_", " "),
+            )
+            return redirect("core:upload_duty_roster")
+        elif missing:
+            messages.error(
+                request,
+                "Missing required schedule columns: " + ", ".join(missing).replace("_", " "),
+            )
+            return redirect("core:upload_duty_roster")
 
         created_schedules = 0
         updated_schedules = 0
         skipped_rows = []
 
-        for row_number, row in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+        for row_number, row in enumerate(uploaded_rows[1:], start=2):
             if not any(row):
                 continue
             guard_value = value_from_row(
                 row,
                 headers,
+                "guard_id",
                 "guard_company_number",
                 "company_number",
                 "employee_number",
@@ -3572,13 +3667,9 @@ def upload_duty_roster(request):
             )
             site_value = value_from_row(row, headers, "site_code", "site", "site_name")
             shift_value = value_from_row(row, headers, "shift", "shift_name")
-            date_value = value_from_row(row, headers, "shift_date", "date", "duty_date")
-
-            shift_date = parse_date(date_value)
-            if not shift_date and hasattr(row[headers.get("shift_date", headers.get("date", headers.get("duty_date")))], "date"):
-                shift_date = row[headers.get("shift_date", headers.get("date", headers.get("duty_date")))].date()
-            if not shift_date:
-                message = "invalid date"
+            schedule_dates = schedule_dates_from_row(row, headers, roster_month)
+            if not schedule_dates:
+                message = "invalid schedule date range"
                 skipped_rows.append(f"Row {row_number}: {message}")
                 record_roster_attendance(
                     batch_reference=batch_reference,
@@ -3594,12 +3685,13 @@ def upload_duty_roster(request):
 
             employee = models.Employee.objects.filter(
                 Q(company_number__iexact=guard_value)
+                | Q(work_card_uid__iexact=guard_value)
                 | Q(national_id__iexact=guard_value)
                 | Q(first_name__iexact=guard_value)
                 | Q(last_name__iexact=guard_value)
             ).first()
             site = models.Site.objects.select_related("client").filter(
-                Q(site_code__iexact=site_value) | Q(site_name__iexact=site_value)
+                Q(site_code__iexact=site_value)
             ).first()
             shift = models.Shift.objects.filter(Q(shift_name__iexact=shift_value) | Q(code__iexact=shift_value)).first()
 
@@ -3621,86 +3713,60 @@ def upload_duty_roster(request):
                     employee=employee,
                     site=site,
                     shift=shift,
-                    shift_date=shift_date,
                     duty_code=shift_value,
                 )
                 continue
 
-            ensure_contract_requirement(site, shift_date, required_guards=site.required_guards_per_shift or 1)
-            existing_schedule = models.GuardSchedule.objects.filter(
-                employee=employee,
-                site=site,
-                shift=shift,
-                shift_date=shift_date,
-            ).first()
-            if not existing_schedule and contract_schedule_limit_reached(site, shift, shift_date):
-                message = contract_limit_message(site, shift, shift_date)
-                skipped_rows.append(f"Row {row_number}: {message}")
+            deployment_start = min(schedule_dates)
+            deployment_end = max(schedule_dates)
+            for shift_date in schedule_dates:
+                schedule, created, error_message = upsert_guard_schedule_from_upload(
+                    employee,
+                    site,
+                    shift,
+                    shift_date,
+                    deployment_start=deployment_start,
+                    deployment_end=deployment_end,
+                    notes="Imported from scheduled-guard upload.",
+                )
+                if error_message:
+                    skipped_rows.append(f"Row {row_number} {shift_date}: {error_message}")
+                    record_roster_attendance(
+                        batch_reference=batch_reference,
+                        file_name=file_name,
+                        source_format=models.RosterAttendance.SourceFormat.SIMPLE,
+                        source_row=row_number,
+                        uploaded_by=request.user,
+                        import_status=models.RosterAttendance.ImportStatus.SKIPPED,
+                        message=error_message,
+                        employee=employee,
+                        site=site,
+                        shift=shift,
+                        shift_date=shift_date,
+                        duty_code=shift_value,
+                    )
+                    continue
+                if created:
+                    created_schedules += 1
+                    import_status = models.RosterAttendance.ImportStatus.CREATED
+                else:
+                    updated_schedules += 1
+                    import_status = models.RosterAttendance.ImportStatus.UPDATED
                 record_roster_attendance(
                     batch_reference=batch_reference,
                     file_name=file_name,
                     source_format=models.RosterAttendance.SourceFormat.SIMPLE,
                     source_row=row_number,
                     uploaded_by=request.user,
-                    import_status=models.RosterAttendance.ImportStatus.SKIPPED,
-                    message=message,
+                    import_status=import_status,
+                    message="Imported from scheduled-guard upload.",
                     employee=employee,
                     site=site,
                     shift=shift,
                     shift_date=shift_date,
+                    schedule=schedule,
                     duty_code=shift_value,
                 )
-                continue
-
-            supervisor = models.ZoneSiteAllocation.objects.filter(
-                site=site,
-                status=models.StatusChoices.ACTIVE,
-                end_date__isnull=True,
-            ).select_related("zone__supervisor").first()
-            deployment, _created = models.Deployment.objects.update_or_create(
-                employee=employee,
-                site=site,
-                start_date=shift_date,
-                defaults={
-                    "client": site.client,
-                    "supervisor": supervisor.zone.supervisor if supervisor else None,
-                    "shift": shift,
-                    "end_date": None,
-                    "status": models.StatusChoices.ACTIVE,
-                },
-            )
-            schedule, created = models.GuardSchedule.objects.update_or_create(
-                deployment=deployment,
-                shift_date=shift_date,
-                defaults={
-                    "employee": employee,
-                    "site": site,
-                    "shift": shift,
-                    "status": models.GuardSchedule.ScheduleStatus.SCHEDULED,
-                    "notes": "Imported from Excel duty roster.",
-                },
-            )
-            if created:
-                created_schedules += 1
-                import_status = models.RosterAttendance.ImportStatus.CREATED
-            else:
-                updated_schedules += 1
-                import_status = models.RosterAttendance.ImportStatus.UPDATED
-            record_roster_attendance(
-                batch_reference=batch_reference,
-                file_name=file_name,
-                source_format=models.RosterAttendance.SourceFormat.SIMPLE,
-                source_row=row_number,
-                uploaded_by=request.user,
-                import_status=import_status,
-                message="Imported from Excel duty roster.",
-                employee=employee,
-                site=site,
-                shift=shift,
-                shift_date=shift_date,
-                schedule=schedule,
-                duty_code=shift_value,
-            )
 
         if created_schedules or updated_schedules:
             messages.success(
