@@ -681,6 +681,8 @@ class SalaryAdmin(admin.ModelAdmin):
         "gross_pay",
         "nssf_employee",
         "nssf_employer",
+        "advance_deduction",
+        "advance_balance",
         "total_deductions",
         "net_salary",
         "status",

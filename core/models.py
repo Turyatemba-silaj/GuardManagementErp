@@ -1337,6 +1337,8 @@ class Salary(TimeStampedModel):
     basic_salary = models.DecimalField(max_digits=12, decimal_places=2)
     allowances = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     deductions = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    advance_deduction = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    advance_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     overtime_pay = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     bonus = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     gross_pay = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -1368,6 +1370,8 @@ class Salary(TimeStampedModel):
                 "basic_salary",
                 "allowances",
                 "deductions",
+                "advance_deduction",
+                "advance_balance",
                 "overtime_pay",
                 "bonus",
                 "gross_pay",
@@ -1382,7 +1386,7 @@ class Salary(TimeStampedModel):
         self.gross_pay = self.basic_salary + self.allowances + self.overtime_pay + self.bonus
         self.nssf_employee = (self.gross_pay * self.NSSF_EMPLOYEE_RATE).quantize(Decimal("0.01"))
         self.nssf_employer = (self.gross_pay * self.NSSF_EMPLOYER_RATE).quantize(Decimal("0.01"))
-        self.total_deductions = self.nssf_employee + self.deductions
+        self.total_deductions = self.nssf_employee + self.deductions + self.advance_deduction
         self.net_salary = self.gross_pay - self.total_deductions
         self.full_clean()
         if kwargs.get("update_fields") is not None:

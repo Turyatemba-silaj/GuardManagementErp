@@ -8,6 +8,7 @@ from . import models
 DEFAULT_ACCOUNTS = {
     "1000": ("Bank", models.Account.AccountType.ASSET),
     "1100": ("Accounts Receivable", models.Account.AccountType.ASSET),
+    "1200": ("Salary Advances Receivable", models.Account.AccountType.ASSET),
     "2000": ("Accounts Payable", models.Account.AccountType.LIABILITY),
     "2100": ("Salary Payable", models.Account.AccountType.LIABILITY),
     "2200": ("NSSF Payable", models.Account.AccountType.LIABILITY),
@@ -120,6 +121,7 @@ def post_salary(salary, posted_by=None):
             ("2100", 0, salary.net_salary, "Net salary payable"),
             ("2200", 0, salary.nssf_employee + salary.nssf_employer, "NSSF payable"),
             ("2000", 0, salary.deductions, "Other payroll deductions payable"),
+            ("1200", 0, salary.advance_deduction, "Salary advance recovered from payroll"),
         ],
     )
 

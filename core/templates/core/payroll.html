@@ -39,6 +39,8 @@
                     <th>Gross Pay</th>
                     <th>NSSF Employee</th>
                     <th>NSSF Employer</th>
+                    <th>Advance Deduction</th>
+                    <th>Advance Balance</th>
                     <th>Total Deductions</th>
                     <th>Net Salary</th>
                     <th>Status</th>
@@ -58,6 +60,8 @@
                         <td>{{ salary.gross_pay }}</td>
                         <td>{{ salary.nssf_employee }}</td>
                         <td>{{ salary.nssf_employer }}</td>
+                        <td>{{ salary.advance_deduction }}</td>
+                        <td>{{ salary.advance_balance }}</td>
                         <td>{{ salary.total_deductions }}</td>
                         <td>{{ salary.net_salary }}</td>
                         <td>{{ salary.get_status_display }}</td>
@@ -67,7 +71,7 @@
                     </tr>
                 {% empty %}
                     <tr class="empty-row">
-                        <td colspan="14">No payroll records generated for this month.</td>
+                        <td colspan="16">No payroll records generated for this month.</td>
                     </tr>
                 {% endfor %}
             </tbody>

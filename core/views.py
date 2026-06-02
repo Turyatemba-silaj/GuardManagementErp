@@ -473,6 +473,37 @@ def money(value):
     return value.quantize(Decimal("0.01"))
 
 
+def approved_advance_total(employee_id, end):
+    return money(
+        models.Advance.objects.filter(
+            employee_id=employee_id,
+            approval_status=models.StatusChoices.APPROVED,
+        )
+        .filter(Q(disbursement_date__lte=end) | Q(disbursement_date__isnull=True, request_date__lte=end))
+        .exclude(repayment_status__in=[models.StatusChoices.PAID, models.StatusChoices.CLOSED, models.StatusChoices.REJECTED])
+        .aggregate(total=Coalesce(Sum("amount_requested"), Decimal("0.00")))["total"]
+    )
+
+
+def previous_advance_deductions(employee_id, start):
+    return money(
+        models.Salary.objects.filter(employee_id=employee_id, pay_period_start__lt=start).aggregate(
+            total=Coalesce(Sum("advance_deduction"), Decimal("0.00"))
+        )["total"]
+    )
+
+
+def payroll_advance_values(employee_id, start, end, gross_pay, nssf_employee, other_deductions):
+    advance_opening_balance = max(
+        approved_advance_total(employee_id, end) - previous_advance_deductions(employee_id, start),
+        Decimal("0.00"),
+    )
+    net_before_advance = max(gross_pay - nssf_employee - other_deductions, Decimal("0.00"))
+    advance_deduction = money(min(advance_opening_balance, net_before_advance))
+    advance_balance = money(max(advance_opening_balance - advance_deduction, Decimal("0.00")))
+    return advance_deduction, advance_balance
+
+
 def generate_payroll_from_attendance(start, end):
     totals = defaultdict(lambda: {"days": 0, "basic_hours": Decimal("0.00"), "overtime_hours": Decimal("0.00")})
     attendances = (
@@ -502,6 +533,19 @@ def generate_payroll_from_attendance(start, end):
         basic_salary = money(total["basic_hours"] * hourly_rate)
         overtime_pay = money(total["overtime_hours"] * hourly_rate * Decimal("1.50"))
         existing = existing_salaries.get(employee_id)
+        allowances = existing.allowances if existing else Decimal("0.00")
+        other_deductions = existing.deductions if existing else Decimal("0.00")
+        bonus = existing.bonus if existing else Decimal("0.00")
+        gross_pay = money(basic_salary + allowances + overtime_pay + bonus)
+        nssf_employee = money(gross_pay * models.Salary.NSSF_EMPLOYEE_RATE)
+        advance_deduction, advance_balance = payroll_advance_values(
+            employee_id,
+            start,
+            end,
+            gross_pay,
+            nssf_employee,
+            other_deductions,
+        )
         salary, _created = models.Salary.objects.update_or_create(
             employee=employee,
             pay_period_start=start,
@@ -511,10 +555,12 @@ def generate_payroll_from_attendance(start, end):
                 "basic_hours": total["basic_hours"],
                 "overtime_hours": total["overtime_hours"],
                 "basic_salary": basic_salary,
-                "allowances": existing.allowances if existing else Decimal("0.00"),
-                "deductions": existing.deductions if existing else Decimal("0.00"),
+                "allowances": allowances,
+                "deductions": other_deductions,
+                "advance_deduction": advance_deduction,
+                "advance_balance": advance_balance,
                 "overtime_pay": overtime_pay,
-                "bonus": existing.bonus if existing else Decimal("0.00"),
+                "bonus": bonus,
                 "payment_date": existing.payment_date if existing else None,
                 "payment_method": existing.payment_method if existing else "",
                 "status": existing.status if existing else models.StatusChoices.UNPAID,
@@ -821,7 +867,9 @@ def payroll_headers():
         "Gross Pay",
         "NSSF Employee",
         "NSSF Employer",
-        "Deductions",
+        "Other Deductions",
+        "Advance Deduction",
+        "Advance Balance",
         "Total Deductions",
         "Net Salary",
         "Status",
@@ -843,6 +891,8 @@ def payroll_row(salary):
         salary.nssf_employee,
         salary.nssf_employer,
         salary.deductions,
+        salary.advance_deduction,
+        salary.advance_balance,
         salary.total_deductions,
         salary.net_salary,
         salary.get_status_display(),
@@ -2415,6 +2465,8 @@ def payslip_pdf(request, pk):
         ["Deductions", "Amount"],
         ["NSSF Employee", money_display(salary.nssf_employee)],
         ["Other Deductions", money_display(salary.deductions)],
+        ["Advance Deduction", money_display(salary.advance_deduction)],
+        ["Advance Balance", money_display(salary.advance_balance)],
         ["Total Deductions", money_display(salary.total_deductions)],
         ["Employer NSSF", money_display(salary.nssf_employer)],
         ["Net Pay", money_display(salary.net_salary)],

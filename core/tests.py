@@ -20,6 +20,7 @@ from openpyxl import Workbook, load_workbook
 from .permissions import sync_system_admin_role
 from .models import (
     Account,
+    Advance,
     Budget,
     Client,
     DepartmentChoices,
@@ -753,7 +754,8 @@ class FinanceCalculationTests(TestCase):
         accounts = ensure_default_accounts()
 
         self.assertIn("1000", accounts)
-        self.assertEqual(Account.objects.count(), 12)
+        self.assertIn("1200", accounts)
+        self.assertEqual(Account.objects.count(), 13)
 
     def test_invoice_posts_balanced_journal_entry(self):
         client = Client.objects.create(
@@ -1135,6 +1137,7 @@ class FinanceCalculationTests(TestCase):
             basic_salary=Decimal("500000.00"),
             allowances=Decimal("0.00"),
             deductions=Decimal("25000.00"),
+            advance_deduction=Decimal("50000.00"),
             overtime_pay=Decimal("0.00"),
             bonus=Decimal("0.00"),
         )
@@ -1145,6 +1148,7 @@ class FinanceCalculationTests(TestCase):
         self.assertEqual(entry.total_debit, entry.total_credit)
         self.assertTrue(JournalLine.objects.filter(account__account_code="5000", debit=salary.gross_pay).exists())
         self.assertTrue(JournalLine.objects.filter(account__account_code="2100", credit=salary.net_salary).exists())
+        self.assertTrue(JournalLine.objects.filter(account__account_code="1200", credit=salary.advance_deduction).exists())
 
     def test_accounting_reports_render_from_posted_journals(self):
         client = Client.objects.create(
@@ -2015,6 +2019,89 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(salary.nssf_employee, Decimal("1400.00"))
         self.assertEqual(salary.nssf_employer, Decimal("2800.00"))
         self.assertEqual(salary.total_deductions, Decimal("1400.00"))
+        self.assertEqual(salary.net_salary, Decimal("26600.00"))
+
+    def test_approved_advance_is_deducted_from_payroll_and_balance_is_kept(self):
+        position = Position.objects.create(
+            position_title="Advance Payroll Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+        Advance.objects.create(
+            employee=self.guard,
+            request_date="2026-05-05",
+            amount_requested=Decimal("30000.00"),
+            approval_status=StatusChoices.APPROVED,
+            disbursement_date="2026-05-06",
+        )
+        Attendance.objects.create(employee=self.guard, shift=self.shift, date="2026-05-16", status="Present")
+
+        self.client.post("/payroll/", {"month": "2026-05"})
+
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(salary.advance_deduction, Decimal("26600.00"))
+        self.assertEqual(salary.advance_balance, Decimal("3400.00"))
+        self.assertEqual(salary.total_deductions, Decimal("28000.00"))
+        self.assertEqual(salary.net_salary, Decimal("0.00"))
+
+    def test_next_payroll_recovers_remaining_advance_balance(self):
+        position = Position.objects.create(
+            position_title="Advance Balance Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+        Advance.objects.create(
+            employee=self.guard,
+            request_date="2026-05-05",
+            amount_requested=Decimal("30000.00"),
+            approval_status=StatusChoices.APPROVED,
+            disbursement_date="2026-05-06",
+        )
+        Salary.objects.create(
+            employee=self.guard,
+            pay_period_start="2026-05-01",
+            pay_period_end="2026-05-31",
+            basic_salary=Decimal("28000.00"),
+            advance_deduction=Decimal("26600.00"),
+            advance_balance=Decimal("3400.00"),
+        )
+        Attendance.objects.create(employee=self.guard, shift=self.shift, date="2026-06-01", status="Present")
+
+        self.client.post("/payroll/", {"month": "2026-06"})
+
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-06-01")
+        self.assertEqual(salary.advance_deduction, Decimal("3400.00"))
+        self.assertEqual(salary.advance_balance, Decimal("0.00"))
+        self.assertEqual(salary.net_salary, Decimal("23200.00"))
+
+    def test_pending_advance_is_not_deducted_from_payroll(self):
+        position = Position.objects.create(
+            position_title="Pending Advance Guard",
+            department=DepartmentChoices.OPERATIONS,
+            salary_range_min=Decimal("416000.00"),
+            salary_range_max=Decimal("416000.00"),
+        )
+        self.guard.position = position
+        self.guard.save(update_fields=["position", "updated_at"])
+        Advance.objects.create(
+            employee=self.guard,
+            request_date="2026-05-05",
+            amount_requested=Decimal("30000.00"),
+            approval_status=StatusChoices.PENDING,
+        )
+        Attendance.objects.create(employee=self.guard, shift=self.shift, date="2026-05-16", status="Present")
+
+        self.client.post("/payroll/", {"month": "2026-05"})
+
+        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
+        self.assertEqual(salary.advance_deduction, Decimal("0.00"))
+        self.assertEqual(salary.advance_balance, Decimal("0.00"))
         self.assertEqual(salary.net_salary, Decimal("26600.00"))
 
     def test_payroll_refreshes_when_attendance_increases(self):
