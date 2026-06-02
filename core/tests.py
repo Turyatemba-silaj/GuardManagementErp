@@ -249,11 +249,26 @@ class AdminLoginRedirectTests(TestCase):
 
 
 class PageLoginRequiredTests(TestCase):
-    def test_home_page_requires_login(self):
-        response = self.client.get(reverse("core:home"))
+    def test_pages_require_login(self):
+        protected_urls = [
+            reverse("core:home"),
+            reverse("core:dashboard"),
+            reverse("core:attendances"),
+            reverse("core:record_list", args=["clients"]),
+        ]
 
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(settings.LOGIN_URL, response["Location"])
+        for url in protected_urls:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 302)
+                self.assertIn(settings.LOGIN_URL, response["Location"])
+
+    def test_login_and_health_pages_remain_public(self):
+        login_response = self.client.get(settings.LOGIN_URL)
+        health_response = self.client.get(reverse("core:healthz"))
+
+        self.assertEqual(login_response.status_code, 200)
+        self.assertEqual(health_response.status_code, 200)
 
     def test_logged_in_user_can_open_home_page(self):
         User.objects.create_user(username="home-user", password="temporary-pass", is_staff=True)

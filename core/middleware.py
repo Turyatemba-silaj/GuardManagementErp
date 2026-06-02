@@ -2,6 +2,7 @@ from html import escape
 
 from django.conf import settings
 from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY
+from django.contrib.auth.views import redirect_to_login
 from django.db import DatabaseError, OperationalError
 from django.http import HttpResponse
 from django.http import JsonResponse
@@ -73,6 +74,34 @@ class PermanentLoginMiddleware:
             request.user = user
             rotate_token(request)
         return self.get_response(request)
+
+
+class LoginRequiredMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.public_prefixes = tuple(
+            getattr(
+                settings,
+                "LOGIN_EXEMPT_URL_PREFIXES",
+                (
+                    settings.LOGIN_URL,
+                    "/accounts/",
+                    "/admin/login/",
+                    "/static/",
+                    settings.MEDIA_URL,
+                    "/healthz/",
+                    "/api/attendance/swipe/",
+                ),
+            )
+        )
+
+    def __call__(self, request):
+        if request.user.is_authenticated or self.is_public_path(request.path):
+            return self.get_response(request)
+        return redirect_to_login(request.get_full_path(), settings.LOGIN_URL)
+
+    def is_public_path(self, path):
+        return any(path.startswith(prefix) for prefix in self.public_prefixes if prefix)
 
 
 class DatabaseErrorMiddleware:

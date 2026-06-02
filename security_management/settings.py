@@ -190,6 +190,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'core.middleware.PermanentLoginMiddleware',
+    'core.middleware.LoginRequiredMiddleware',
     'core.middleware.SaaSTenantMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'core.middleware.DatabaseErrorMiddleware',
