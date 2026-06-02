@@ -39,7 +39,7 @@ from .access import can_access_internal, can_manage_attendance, can_manage_slug,
 from .accounting import ensure_default_accounts, post_all_accounting
 from .crud import MODEL_REGISTRY, visible_grouped_registry
 from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm, SecureModelForm
-from .security import file_extension, validate_schedule_upload
+from .security import file_extension, validate_excel_upload, validate_schedule_upload
 
 
 MODEL_FORM_EXCLUDES = {
@@ -2867,6 +2867,15 @@ def attendances(request):
             schedule = get_object_or_404(allowed_schedules.select_related("employee"), id=schedule_id)
             selected_employee_id = request.POST.get(f"scheduled_guard_{schedule_id}") or schedule.employee_id
             selected_employee = get_object_or_404(allowed_employees, id=selected_employee_id)
+            selected_deployment = schedule.deployment
+            if selected_employee.id != schedule.deployment.employee_id:
+                selected_deployment = deployment_for_attendance_employee(
+                    selected_employee,
+                    schedule.site,
+                    schedule.shift,
+                    schedule.shift_date,
+                )
+                schedule.deployment = selected_deployment
             schedule.employee = selected_employee
             present_value = request.POST.get(f"present_{schedule_id}", "")
             is_present = present_value.lower() in {"on", "yes", "true", "1"}
@@ -2943,6 +2952,12 @@ def attendances(request):
                 schedule.notes = f"Absent: {reason}" if reason else "Absent"
                 if replacement_employee_id:
                     replacement_employee = get_object_or_404(allowed_employees, id=replacement_employee_id)
+                    deployment_for_attendance_employee(
+                        replacement_employee,
+                        schedule.site,
+                        schedule.shift,
+                        schedule.shift_date,
+                    )
                     schedule.replacement_employee = replacement_employee
                     models.Attendance.objects.update_or_create(
                         employee=replacement_employee,
@@ -2961,6 +2976,7 @@ def attendances(request):
             schedule.save(
                 update_fields=[
                     "employee",
+                    "deployment",
                     "replacement_employee",
                     "replacement_reason",
                     "status",
@@ -2985,6 +3001,32 @@ def attendances(request):
         ),
     }
     return render(request, "core/attendances.html", context)
+
+
+def deployment_for_attendance_employee(employee, site, shift, shift_date):
+    existing = (
+        models.Deployment.objects.filter(
+            employee=employee,
+            site=site,
+            shift=shift,
+            status=models.StatusChoices.ACTIVE,
+            start_date__lte=shift_date,
+        )
+        .filter(Q(end_date__gte=shift_date) | Q(end_date__isnull=True))
+        .order_by("-start_date")
+        .first()
+    )
+    if existing:
+        return existing
+    return models.Deployment.objects.create(
+        employee=employee,
+        client=site.client,
+        site=site,
+        shift=shift,
+        start_date=shift_date,
+        end_date=shift_date,
+        status=models.StatusChoices.ACTIVE,
+    )
 
 
 def normalized_header(value):

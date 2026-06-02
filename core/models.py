@@ -5,7 +5,7 @@ from math import atan2, cos, radians, sin, sqrt
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -35,6 +35,22 @@ class DepartmentChoices(models.TextChoices):
     HUMAN_RESOURCE = "human_resource", "Human Resource"
     FINANCE = "finance", "Finance"
     ADMIN = "admin", "Admin"
+
+
+phone_number_validator = RegexValidator(
+    regex=r"^\+?\d{7,15}$",
+    message="Enter a valid phone number using digits only, optionally starting with +.",
+)
+
+
+def validate_non_negative_fields(instance, field_names):
+    errors = {}
+    for field_name in field_names:
+        value = getattr(instance, field_name, None)
+        if value is not None and value < 0:
+            errors[field_name] = "This value cannot be negative."
+    if errors:
+        raise ValidationError(errors)
 
 
 class SubscriptionPlan(TimeStampedModel):
@@ -119,9 +135,9 @@ class TenantMembership(TimeStampedModel):
 
 
 class Client(TimeStampedModel):
-    client_name = models.CharField(max_length=150)
+    client_name = models.CharField(max_length=150, unique=True)
     contact_person = models.CharField(max_length=150)
-    phone_number = models.CharField(max_length=30)
+    phone_number = models.CharField(max_length=30, validators=[phone_number_validator])
     email = models.EmailField(blank=True)
     address = models.TextField(blank=True)
     contract_start_date = models.DateField()
@@ -135,6 +151,20 @@ class Client(TimeStampedModel):
 
     def __str__(self):
         return self.client_name
+
+    def clean(self):
+        super().clean()
+        if self.contract_end_date and self.contract_end_date < self.contract_start_date:
+            raise ValidationError({"contract_end_date": "Contract end date cannot be before start date."})
+        duplicates = Client.objects.filter(client_name__iexact=self.client_name.strip())
+        if self.pk:
+            duplicates = duplicates.exclude(pk=self.pk)
+        if duplicates.exists():
+            raise ValidationError({"client_name": "A client with this name already exists."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class Site(TimeStampedModel):
@@ -391,7 +421,7 @@ class Employee(TimeStampedModel):
     last_name = models.CharField(max_length=80)
     date_of_birth = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=30, blank=True)
-    phone_number = models.CharField(max_length=30)
+    phone_number = models.CharField(max_length=30, validators=[phone_number_validator])
     email = models.EmailField(unique=True)
     passport_photo = models.FileField(upload_to="employee_passport_photos/", blank=True)
     bank_account = models.CharField(max_length=80, blank=True)
@@ -411,7 +441,7 @@ class Employee(TimeStampedModel):
     uniform_size = models.CharField(max_length=30, blank=True)
     qualification = models.CharField(max_length=150, blank=True)
     next_of_keen = models.CharField(max_length=150, blank=True)
-    next_of_keen_contact =models.CharField(max_length=150, blank=True)
+    next_of_keen_contact = models.CharField(max_length=150, blank=True, validators=[phone_number_validator])
     training_level = models.CharField(max_length=80, blank=True)
     assigned_zone = models.CharField(max_length=120, blank=True)
     experience_years = models.PositiveIntegerField(default=0)
@@ -426,6 +456,22 @@ class Employee(TimeStampedModel):
 
     def __str__(self):
         return self.full_name
+
+    def clean(self):
+        super().clean()
+        duplicates = Employee.objects.filter(
+            first_name__iexact=self.first_name.strip(),
+            last_name__iexact=self.last_name.strip(),
+            phone_number=self.phone_number,
+        )
+        if self.pk:
+            duplicates = duplicates.exclude(pk=self.pk)
+        if duplicates.exists():
+            raise ValidationError("A guard with the same name and phone number already exists.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class Zone(TimeStampedModel):
@@ -572,6 +618,32 @@ class Deployment(TimeStampedModel):
     def __str__(self):
         return f"{self.employee} at {self.site}"
 
+    def clean(self):
+        super().clean()
+        if self.end_date and self.end_date < self.start_date:
+            raise ValidationError({"end_date": "Deployment end date cannot be before start date."})
+        if not self.employee_id or not self.site_id or not self.start_date:
+            return
+        if self.status != StatusChoices.ACTIVE:
+            return
+        deployment_end = self.end_date or timezone.datetime.max.date()
+        conflicts = Deployment.objects.filter(
+            employee_id=self.employee_id,
+            status=StatusChoices.ACTIVE,
+            start_date__lte=deployment_end,
+        ).filter(Q(end_date__gte=self.start_date) | Q(end_date__isnull=True))
+        if self.pk:
+            conflicts = conflicts.exclude(pk=self.pk)
+        conflicts = conflicts.exclude(site_id=self.site_id)
+        if conflicts.exists():
+            raise ValidationError(
+                {"site": "This guard already has an active overlapping deployment at another site."}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
 
 class GuardSchedule(TimeStampedModel):
     class ScheduleStatus(models.TextChoices):
@@ -630,6 +702,17 @@ class GuardSchedule(TimeStampedModel):
 
     def clean(self):
         super().clean()
+        if self.deployment_id:
+            if self.employee_id and self.employee_id != self.deployment.employee_id:
+                raise ValidationError({"employee": "Schedule employee must match the deployment employee."})
+            if self.site_id and self.site_id != self.deployment.site_id:
+                raise ValidationError({"site": "Schedule site must match the deployment site."})
+            if self.shift_id and self.shift_id != self.deployment.shift_id:
+                raise ValidationError({"shift": "Schedule shift must match the deployment shift."})
+            if self.shift_date and self.shift_date < self.deployment.start_date:
+                raise ValidationError({"shift_date": "Schedule date cannot be before deployment start date."})
+            if self.shift_date and self.deployment.end_date and self.shift_date > self.deployment.end_date:
+                raise ValidationError({"shift_date": "Schedule date cannot be after deployment end date."})
         if self.status == self.ScheduleStatus.CANCELLED:
             return
         limit = self.required_guard_limit()
@@ -653,8 +736,7 @@ class GuardSchedule(TimeStampedModel):
             )
 
     def save(self, *args, **kwargs):
-        if self._state.adding:
-            self.full_clean()
+        self.full_clean()
         super().save(*args, **kwargs)
 
 
@@ -899,7 +981,7 @@ class RecruitmentApplication(TimeStampedModel):
     first_name = models.CharField(max_length=80)
     last_name = models.CharField(max_length=80)
     gender = models.CharField(max_length=30, blank=True)
-    phone_number = models.CharField(max_length=30)
+    phone_number = models.CharField(max_length=30, validators=[phone_number_validator])
     email = models.EmailField(blank=True)
     national_id = models.CharField(max_length=80, blank=True)
     address = models.TextField(blank=True)
@@ -1056,6 +1138,37 @@ class Attendance(TimeStampedModel):
 
     def __str__(self):
         return f"{self.employee} - {self.date}"
+
+    def clean(self):
+        super().clean()
+        if self.schedule_id:
+            if self.employee_id and self.employee_id != self.schedule.employee_id:
+                raise ValidationError({"employee": "Attendance employee must match the schedule employee."})
+            if self.site_id and self.site_id != self.schedule.site_id:
+                raise ValidationError({"site": "Attendance site must match the schedule site."})
+            if self.shift_id and self.shift_id != self.schedule.shift_id:
+                raise ValidationError({"shift": "Attendance shift must match the schedule shift."})
+            if self.date and self.date != self.schedule.shift_date:
+                raise ValidationError({"date": "Attendance date must match the schedule date."})
+            deployment = self.schedule.deployment
+            if self.date and self.date < deployment.start_date:
+                raise ValidationError({"date": "Attendance date cannot be before deployment start date."})
+            if self.date and deployment.end_date and self.date > deployment.end_date:
+                raise ValidationError({"date": "Attendance date cannot be after deployment end date."})
+        elif self.employee_id and self.site_id and self.shift_id and self.date:
+            deployment_exists = Deployment.objects.filter(
+                employee_id=self.employee_id,
+                site_id=self.site_id,
+                shift_id=self.shift_id,
+                status=StatusChoices.ACTIVE,
+                start_date__lte=self.date,
+            ).filter(Q(end_date__gte=self.date) | Q(end_date__isnull=True)).exists()
+            if not deployment_exists:
+                raise ValidationError({"date": "Attendance must be linked to an active deployment for this date."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class AttendanceDevice(TimeStampedModel):
@@ -1239,6 +1352,31 @@ class Salary(TimeStampedModel):
         ordering = ["-pay_period_start", "employee"]
         verbose_name = "Salary"
         verbose_name_plural = "Salaries"
+        constraints = [
+            models.UniqueConstraint(fields=["employee", "pay_period_start"], name="unique_employee_pay_period"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.pay_period_end and self.pay_period_start and self.pay_period_end < self.pay_period_start:
+            raise ValidationError({"pay_period_end": "Pay period end cannot be before pay period start."})
+        validate_non_negative_fields(
+            self,
+            (
+                "basic_hours",
+                "overtime_hours",
+                "basic_salary",
+                "allowances",
+                "deductions",
+                "overtime_pay",
+                "bonus",
+                "gross_pay",
+                "nssf_employee",
+                "nssf_employer",
+                "total_deductions",
+                "net_salary",
+            ),
+        )
 
     def save(self, *args, **kwargs):
         self.gross_pay = self.basic_salary + self.allowances + self.overtime_pay + self.bonus
@@ -1246,6 +1384,7 @@ class Salary(TimeStampedModel):
         self.nssf_employer = (self.gross_pay * self.NSSF_EMPLOYER_RATE).quantize(Decimal("0.01"))
         self.total_deductions = self.nssf_employee + self.deductions
         self.net_salary = self.gross_pay - self.total_deductions
+        self.full_clean()
         if kwargs.get("update_fields") is not None:
             kwargs["update_fields"] = set(kwargs["update_fields"]) | {
                 "gross_pay",
@@ -1428,6 +1567,37 @@ class Invoice(TimeStampedModel):
             self.client_contact_person = self.client.contact_person
             self.client_phone_number = self.client.phone_number
 
+    def clean(self):
+        super().clean()
+        if self.due_date and self.invoice_date and self.due_date < self.invoice_date:
+            raise ValidationError({"due_date": "Due date cannot be before invoice date."})
+        if self.contract_id and self.client_id and self.contract.client_id != self.client_id:
+            raise ValidationError({"client": "Invoice client must match the selected contract client."})
+        if self.contract_id and self.site_id:
+            if self.site.client_id != self.contract.client_id:
+                raise ValidationError({"site": "Invoice site must belong to the contract client."})
+            if not ContractSiteRequirement.objects.filter(contract=self.contract, site=self.site).exists():
+                raise ValidationError({"site": "Invoice site must be part of the selected contract."})
+        validate_non_negative_fields(
+            self,
+            (
+                "rate_per_guard",
+                "gun_rate",
+                "radio_rate",
+                "metal_detector_rate",
+                "walk_through_machine_rate",
+                "dog_rate",
+                "subtotal_amount",
+                "vat_rate",
+                "vat_amount",
+                "total_amount",
+                "paid_amount",
+                "balance_amount",
+            ),
+        )
+        if self.total_amount is not None and self.paid_amount is not None and self.paid_amount > self.total_amount:
+            raise ValidationError({"paid_amount": "Paid amount cannot exceed the invoice total."})
+
     def save(self, *args, **kwargs):
         self.sync_client_snapshot()
         if self.billing_scope in {self.BillingScope.CONTRACT, self.BillingScope.MULTIPLE_SITES}:
@@ -1492,6 +1662,7 @@ class Invoice(TimeStampedModel):
             self.status = StatusChoices.PAID
         else:
             self.status = StatusChoices.UNPAID
+        self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self):

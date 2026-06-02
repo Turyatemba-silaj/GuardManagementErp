@@ -500,6 +500,68 @@ class FinanceCalculationTests(TestCase):
         self.assertEqual(salary.total_deductions, Decimal("53750.00"))
         self.assertEqual(salary.net_salary, Decimal("521250.00"))
 
+    def test_salary_cannot_be_negative(self):
+        with self.assertRaises(ValidationError):
+            Salary.objects.create(
+                employee=self.employee,
+                pay_period_start="2026-05-01",
+                pay_period_end="2026-05-31",
+                basic_salary=Decimal("-1.00"),
+            )
+
+    def test_duplicate_payroll_record_is_rejected(self):
+        Salary.objects.create(
+            employee=self.employee,
+            pay_period_start="2026-05-01",
+            pay_period_end="2026-05-31",
+            basic_salary=Decimal("500000.00"),
+        )
+
+        with self.assertRaises((ValidationError, IntegrityError)):
+            Salary.objects.create(
+                employee=self.employee,
+                pay_period_start="2026-05-01",
+                pay_period_end="2026-05-31",
+                basic_salary=Decimal("500000.00"),
+            )
+
+    def test_invalid_phone_number_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            Client.objects.create(
+                client_name="Bad Phone Client",
+                contact_person="Jane",
+                phone_number="phone-number",
+                contract_start_date="2026-01-01",
+            )
+
+    def test_duplicate_client_name_is_rejected(self):
+        Client.objects.create(
+            client_name="Unique Client",
+            contact_person="Jane",
+            phone_number="0711111111",
+            contract_start_date="2026-01-01",
+        )
+
+        with self.assertRaises((ValidationError, IntegrityError)):
+            Client.objects.create(
+                client_name="Unique Client",
+                contact_person="John",
+                phone_number="0711111112",
+                contract_start_date="2026-01-01",
+            )
+
+    def test_duplicate_guard_identity_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            Employee.objects.create(
+                first_name="Alex",
+                last_name="Okello",
+                phone_number="0700000000",
+                email="alex-duplicate@example.com",
+                national_id="NIN-DUP",
+                role=self.role,
+                position=self.position,
+            )
+
     def test_shift_splits_basic_and_overtime_hours_under_uganda_law(self):
         shift = Shift.objects.create(
             shift_name="Twelve Hour Day",
@@ -532,6 +594,61 @@ class FinanceCalculationTests(TestCase):
 
         self.assertEqual(invoice.balance_amount, Decimal("0.00"))
         self.assertEqual(invoice.status, StatusChoices.PAID)
+
+    def test_invoice_total_is_recalculated_from_contract_terms(self):
+        client = Client.objects.create(
+            client_name="Contract Billing Client",
+            contact_person="Jane",
+            phone_number="0711111125",
+            contract_start_date="2026-01-01",
+        )
+        site = Site.objects.create(
+            client=client,
+            site_name="Main Site",
+            site_address="Plot 1",
+            city="Kampala",
+        )
+        contract = Contract.objects.create(
+            client=client,
+            contract_number="CONTRACT-TERMS-001",
+            start_date="2026-01-01",
+            billing_rate=Decimal("100000.00"),
+        )
+        ContractSiteRequirement.objects.create(
+            contract=contract,
+            site=site,
+            required_guards=2,
+            rate_per_guard=Decimal("100000.00"),
+            start_date="2026-01-01",
+        )
+
+        invoice = Invoice.objects.create(
+            client=client,
+            contract=contract,
+            site=site,
+            billing_month="2026-05-01",
+            due_date="2026-06-15",
+            total_amount=Decimal("1.00"),
+        )
+
+        self.assertEqual(invoice.subtotal_amount, Decimal("200000.00"))
+        self.assertEqual(invoice.total_amount, Decimal("236000.00"))
+
+    def test_invoice_paid_amount_cannot_exceed_total(self):
+        client = Client.objects.create(
+            client_name="Overpaid Client",
+            contact_person="Jane",
+            phone_number="0711111126",
+            contract_start_date="2026-01-01",
+        )
+
+        with self.assertRaises(ValidationError):
+            Invoice.objects.create(
+                client=client,
+                due_date="2026-06-15",
+                total_amount=Decimal("1000.00"),
+                paid_amount=Decimal("1001.00"),
+            )
 
     def test_invoice_pdf_is_downloadable(self):
         client = Client.objects.create(
@@ -576,7 +693,7 @@ class FinanceCalculationTests(TestCase):
             client=client,
             invoice_number="INV-MISSING-001",
             invoice_date="2026-05-01",
-            due_date="2026-04-15",
+            due_date="2026-05-20",
             guard_count=1,
             rate_per_guard=Decimal("200000.00"),
         )
@@ -1696,7 +1813,7 @@ class GuardSchedulingTests(TestCase):
         worksheet.append([])
         worksheet.append(["site code", "site name", "shift", "Mon", "Tue", "Wed"])
         worksheet.append([None, None, "D", 1, 2, 3])
-        worksheet.append(["S001", "Wide Monthly Site", "D", "O", "D", "N"])
+        worksheet.append(["WM001", "Wide Monthly Site", "D", "O", "D", "N"])
         content = BytesIO()
         workbook.save(content)
         upload = SimpleUploadedFile(
@@ -1714,7 +1831,7 @@ class GuardSchedulingTests(TestCase):
         off_row = RosterAttendance.objects.get(duty_code="O")
         self.assertEqual(off_row.import_status, RosterAttendance.ImportStatus.OFF)
         self.assertEqual(off_row.shift_date.isoformat(), "2026-05-01")
-        self.assertEqual(off_row.site.site_code, "S001")
+        self.assertEqual(off_row.site.site_code, "WM001")
         self.assertEqual(off_row.site.site_name, "Wide Monthly Site")
         self.assertTrue(
             RosterAttendance.objects.filter(
@@ -1749,6 +1866,34 @@ class GuardSchedulingTests(TestCase):
                 site=self.site,
                 shift=self.shift,
                 shift_date="2026-05-22",
+            )
+
+    def test_guard_cannot_be_deployed_to_two_sites_at_same_time(self):
+        second_site = Site.objects.create(
+            client=self.client_record,
+            site_name="Warehouse Gate",
+            site_address="Plot 2",
+            city="Kampala",
+        )
+
+        with self.assertRaises(ValidationError):
+            Deployment.objects.create(
+                employee=self.guard,
+                client=self.client_record,
+                site=second_site,
+                shift=self.shift,
+                start_date="2026-05-01",
+                end_date="2026-05-31",
+            )
+
+    def test_attendance_cannot_be_before_deployment_date(self):
+        with self.assertRaises(ValidationError):
+            Attendance.objects.create(
+                employee=self.guard,
+                site=self.site,
+                shift=self.shift,
+                date="2026-04-30",
+                status="Present",
             )
 
     def test_cancelled_guard_schedule_does_not_count_against_required_guards(self):
@@ -2027,61 +2172,22 @@ class GuardSchedulingTests(TestCase):
         self.assertEqual(salary.basic_hours, Decimal("16.00"))
         self.assertEqual(salary.overtime_hours, Decimal("8.00"))
 
-    def test_payroll_days_count_same_guard_shift_at_different_sites(self):
-        position = Position.objects.create(
-            position_title="Multi Site Payroll Guard",
-            department=DepartmentChoices.OPERATIONS,
-            salary_range_min=Decimal("416000.00"),
-            salary_range_max=Decimal("416000.00"),
-        )
-        self.guard.position = position
-        self.guard.save(update_fields=["position", "updated_at"])
+    def test_payroll_rejects_same_guard_shift_at_different_sites(self):
         second_site = Site.objects.create(
             client=self.client_record,
             site_name="Warehouse Gate",
             site_address="Plot 2",
             city="Kampala",
         )
-        second_deployment = Deployment.objects.create(
-            employee=self.guard,
-            client=self.client_record,
-            site=second_site,
-            shift=self.shift,
-            start_date="2026-05-01",
-        )
-        first_schedule = GuardSchedule.objects.create(
-            deployment=self.deployment,
-            employee=self.guard,
-            site=self.site,
-            shift=self.shift,
-            shift_date="2026-05-16",
-        )
-        second_schedule = GuardSchedule.objects.create(
-            deployment=second_deployment,
-            employee=self.guard,
-            site=second_site,
-            shift=self.shift,
-            shift_date="2026-05-16",
-        )
 
-        self.client.post(
-            "/attendances/",
-            {
-                "site": "",
-                "date": "2026-05-16",
-                "schedule_ids": [str(first_schedule.id), str(second_schedule.id)],
-                f"scheduled_guard_{first_schedule.id}": str(self.guard.id),
-                f"present_{first_schedule.id}": "yes",
-                f"scheduled_guard_{second_schedule.id}": str(self.guard.id),
-                f"present_{second_schedule.id}": "yes",
-            },
-        )
-
-        salary = Salary.objects.get(employee=self.guard, pay_period_start="2026-05-01")
-        self.assertEqual(Attendance.objects.filter(employee=self.guard, date="2026-05-16", shift=self.shift).count(), 2)
-        self.assertEqual(salary.attendance_days, 2)
-        self.assertEqual(salary.basic_hours, Decimal("16.00"))
-        self.assertEqual(salary.overtime_hours, Decimal("8.00"))
+        with self.assertRaises(ValidationError):
+            Deployment.objects.create(
+                employee=self.guard,
+                client=self.client_record,
+                site=second_site,
+                shift=self.shift,
+                start_date="2026-05-01",
+            )
 
     def test_payroll_exports_and_payslip_are_downloadable(self):
         position = Position.objects.create(
