@@ -107,10 +107,17 @@ def sqlite_runtime_config(config):
             configured_db = Path(configured_name)
             if configured_db.exists():
                 bundled_db = configured_db
-        if bundled_db.exists() and (
-            not writable_db.exists() or bundled_db.stat().st_mtime > writable_db.stat().st_mtime
-        ):
-            shutil.copy2(bundled_db, writable_db)
+        if bundled_db.exists():
+            bundled_stat = bundled_db.stat()
+            should_copy = not writable_db.exists()
+            if not should_copy:
+                writable_stat = writable_db.stat()
+                should_copy = (
+                    bundled_stat.st_mtime > writable_stat.st_mtime
+                    or bundled_stat.st_size != writable_stat.st_size
+                )
+            if should_copy:
+                shutil.copy2(bundled_db, writable_db)
         DATABASE_RUNTIME_NOTE = (
             "Using writable /tmp SQLite fallback for Vercel. "
             "This avoids read-only errors but is not durable production storage. "
@@ -153,6 +160,28 @@ def postgres_config_from_env():
     return config
 
 
+def has_explicit_postgres_env():
+    return bool(
+        os.environ.get("DJANGO_DB_HOST")
+        or os.environ.get("DJANGO_DB_PASSWORD")
+        or os.environ.get("DJANGO_DB_USER")
+        or os.environ.get("DJANGO_DB_PORT")
+    )
+
+
+def bundled_sqlite_config():
+    return sqlite_runtime_config(
+        {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": str(BASE_DIR / "db.sqlite3"),
+            "USER": "",
+            "PASSWORD": "",
+            "HOST": "",
+            "PORT": "",
+        }
+    )
+
+
 def database_config():
     global DATABASE_RUNTIME_NOTE
     database_url = (
@@ -165,10 +194,14 @@ def database_config():
         return database_from_url(database_url)
 
     if IS_VERCEL:
+        if has_explicit_postgres_env():
+            return postgres_config_from_env()
         DATABASE_RUNTIME_NOTE = (
-            "PostgreSQL is required on Vercel. Set DATABASE_URL to your hosted PostgreSQL connection string."
+            "DATABASE_URL is not configured on Vercel, so the bundled SQLite database was copied to /tmp. "
+            "This keeps the app online but is not durable production storage. "
+            "Set DATABASE_URL to a hosted PostgreSQL connection string for permanent production data."
         )
-        return postgres_config_from_env()
+        return bundled_sqlite_config()
 
     use_sqlite = env_bool("DJANGO_USE_SQLITE", default=("test" in sys.argv))
     if not use_sqlite:

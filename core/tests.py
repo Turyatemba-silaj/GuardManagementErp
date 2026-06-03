@@ -84,7 +84,7 @@ class DatabaseRuntimeTests(TestCase):
         self.assertTrue(changed)
         self.assertEqual(settings.DATABASES["default"]["NAME"].replace("\\", "/"), "/tmp/erp.sqlite3")
 
-    def test_vercel_sqlite_database_url_is_ignored_for_postgresql(self):
+    def test_vercel_sqlite_database_url_uses_postgresql_when_configured(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bundled_db = Path(temp_dir) / "db.sqlite3"
             bundled_db.write_bytes(b"")
@@ -98,6 +98,51 @@ class DatabaseRuntimeTests(TestCase):
         self.assertEqual(config["ENGINE"], "django.db.backends.postgresql")
         self.assertEqual(config["NAME"], "erp")
         self.assertEqual(config["HOST"], "db.example.com")
+
+    def test_vercel_without_database_url_falls_back_to_tmp_sqlite(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundled_db = Path(temp_dir) / "db.sqlite3"
+            bundled_db.write_bytes(b"")
+            with (
+                patch.object(project_settings, "IS_VERCEL", True),
+                patch.object(project_settings, "BASE_DIR", Path(temp_dir)),
+                patch.dict(
+                    os.environ,
+                    {
+                        "DATABASE_URL": "",
+                        "POSTGRES_URL": "",
+                        "POSTGRES_URL_NON_POOLING": "",
+                        "POSTGRES_PRISMA_URL": "",
+                        "DJANGO_DB_HOST": "",
+                        "DJANGO_DB_PASSWORD": "",
+                        "DJANGO_DB_USER": "",
+                        "DJANGO_DB_PORT": "",
+                    },
+                    clear=False,
+                ),
+            ):
+                config = project_settings.database_config()
+
+        self.assertEqual(config["ENGINE"], "django.db.backends.sqlite3")
+        self.assertEqual(config["NAME"].replace("\\", "/"), "/tmp/erp.sqlite3")
+        self.assertEqual(config["HOST"], "")
+
+    def test_vercel_sqlite_fallback_replaces_stale_tmp_copy(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundled_db = Path(temp_dir) / "db.sqlite3"
+            writable_db = Path(temp_dir) / "tmp.sqlite3"
+            bundled_db.write_bytes(b"bundled database")
+            writable_db.write_bytes(b"old")
+            with (
+                patch.object(project_settings, "IS_VERCEL", True),
+                patch.object(project_settings, "BASE_DIR", Path(temp_dir)),
+                patch.dict(os.environ, {"DJANGO_SQLITE_TMP_NAME": str(writable_db)}, clear=False),
+            ):
+                config = project_settings.bundled_sqlite_config()
+                copied_bytes = writable_db.read_bytes()
+
+            self.assertEqual(config["NAME"], str(writable_db))
+            self.assertEqual(copied_bytes, b"bundled database")
 
     def test_healthz_write_probe_does_not_create_persistent_table(self):
         response = self.client.get(reverse("core:healthz"))

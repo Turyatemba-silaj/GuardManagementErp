@@ -16,10 +16,11 @@ DJANGO_SUPERUSER_USERNAME=siraje
 DJANGO_SUPERUSER_PASSWORD=siraje@2026
 DJANGO_SUPERUSER_EMAIL=siraje@example.com
 ERP_PERMANENT_LOGIN=false
-DJANGO_USE_SQLITE=false
 ```
 
 Vercel normally also provides `VERCEL=1` and `VERCEL_URL`; the settings file now reads those automatically. The explicit variables above are still recommended because they make the production host policy clear.
+
+If `DATABASE_URL` is missing, the app falls back to the bundled SQLite database copied into `/tmp` on Vercel so requests do not fail with a localhost PostgreSQL error. That fallback is temporary and not durable; every deployment or cold runtime can lose writes. Use PostgreSQL for real production data.
 
 ## Live Login
 
@@ -54,7 +55,7 @@ If a `DisallowedHost` page still shows:
 
 ## PostgreSQL Database
 
-This project now defaults to PostgreSQL. SQLite is only available when `DJANGO_USE_SQLITE=true`, and that should not be enabled on the live Vercel server.
+This project prefers PostgreSQL on Vercel. SQLite is only a temporary fallback when no hosted database is configured, and it should not be treated as live production storage.
 
 Use one PostgreSQL URL in Vercel:
 
