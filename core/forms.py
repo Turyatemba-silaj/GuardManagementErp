@@ -108,6 +108,14 @@ class UserRoleForm(forms.ModelForm):
 
 
 class ContractForm(SecureModelForm):
+    DEFAULTED_FIELDS = (
+        "contract_value",
+        "currency",
+        "billing_cycle",
+        "payment_terms_days",
+        "termination_notice_days",
+        "governing_law",
+    )
     DELIVERABLE_FIELDS = (
         "dog_count",
         "dog_rate",
@@ -126,11 +134,37 @@ class ContractForm(SecureModelForm):
         fields = (
             "client",
             "contract_number",
+            "contract_title",
             "service_type",
+            "client_representative",
+            "client_representative_title",
+            "client_representative_email",
+            "company_representative",
+            "company_representative_title",
+            "signed_date",
             "start_date",
             "end_date",
             "billing_rate",
+            "contract_value",
+            "currency",
+            "billing_cycle",
+            "payment_terms_days",
+            "payment_instructions",
             "status",
+            "service_scope",
+            "service_location",
+            "service_hours",
+            "response_time_sla",
+            "supervision_frequency",
+            "guard_training_requirements",
+            "client_obligations",
+            "company_obligations",
+            "confidentiality_clause",
+            "liability_limit",
+            "termination_notice_days",
+            "renewal_terms",
+            "governing_law",
+            "special_conditions",
             "dog_count",
             "dog_rate",
             "metal_detector_count",
@@ -144,6 +178,32 @@ class ContractForm(SecureModelForm):
             "terms",
         )
         labels = {
+            "contract_title": "Contract Title",
+            "client_representative": "Client Representative",
+            "client_representative_title": "Client Representative Title",
+            "client_representative_email": "Client Representative Email",
+            "company_representative": "Company Representative",
+            "company_representative_title": "Company Representative Title",
+            "signed_date": "Signed Date",
+            "billing_rate": "Billing Rate",
+            "contract_value": "Contract Value",
+            "billing_cycle": "Billing Cycle",
+            "payment_terms_days": "Payment Terms Days",
+            "payment_instructions": "Payment Instructions",
+            "service_scope": "Scope of Services",
+            "service_location": "Service Location",
+            "service_hours": "Service Hours",
+            "response_time_sla": "Response Time SLA",
+            "supervision_frequency": "Supervision Frequency",
+            "guard_training_requirements": "Guard Training Requirements",
+            "client_obligations": "Client Obligations",
+            "company_obligations": "Company Obligations",
+            "confidentiality_clause": "Confidentiality Clause",
+            "liability_limit": "Liability Limit",
+            "termination_notice_days": "Termination Notice Days",
+            "renewal_terms": "Renewal Terms",
+            "governing_law": "Governing Law",
+            "special_conditions": "Special Conditions",
             "dog_count": "Dogs",
             "dog_rate": "Price Per Dog",
             "metal_detector_count": "Metal Detectors",
@@ -157,20 +217,45 @@ class ContractForm(SecureModelForm):
         }
         help_texts = {
             "service_type": "Select Others to record additional contract deliverables.",
+            "contract_value": "Total contract value when agreed. Leave 0 if billed only by deployment requirements.",
+            "payment_terms_days": "Number of days after invoice date before payment is due.",
+            "termination_notice_days": "Required notice period before either party can terminate.",
         }
         widgets = {
+            "signed_date": forms.DateInput(attrs={"type": "date"}),
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
+            "payment_instructions": forms.Textarea(attrs={"rows": 3}),
+            "service_scope": forms.Textarea(attrs={"rows": 4}),
+            "guard_training_requirements": forms.Textarea(attrs={"rows": 3}),
+            "client_obligations": forms.Textarea(attrs={"rows": 3}),
+            "company_obligations": forms.Textarea(attrs={"rows": 3}),
+            "confidentiality_clause": forms.Textarea(attrs={"rows": 3}),
+            "renewal_terms": forms.Textarea(attrs={"rows": 3}),
+            "special_conditions": forms.Textarea(attrs={"rows": 3}),
             "terms": forms.Textarea(attrs={"rows": 4}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["currency"].initial = self.fields["currency"].initial or "UGX"
+        self.fields["billing_cycle"].initial = self.fields["billing_cycle"].initial or models.Contract.BillingCycle.MONTHLY
+        self.fields["payment_terms_days"].initial = self.fields["payment_terms_days"].initial or 30
+        self.fields["termination_notice_days"].initial = self.fields["termination_notice_days"].initial or 30
+        self.fields["governing_law"].initial = self.fields["governing_law"].initial or "Uganda"
+        for field_name in self.DEFAULTED_FIELDS:
+            self.fields[field_name].required = False
         for field_name in self.DELIVERABLE_FIELDS:
             self.fields[field_name].required = False
 
     def clean(self):
         cleaned_data = super().clean()
+        cleaned_data["contract_value"] = cleaned_data.get("contract_value") or 0
+        cleaned_data["currency"] = (cleaned_data.get("currency") or "UGX").upper()
+        cleaned_data["billing_cycle"] = cleaned_data.get("billing_cycle") or models.Contract.BillingCycle.MONTHLY
+        cleaned_data["payment_terms_days"] = cleaned_data.get("payment_terms_days") or 30
+        cleaned_data["termination_notice_days"] = cleaned_data.get("termination_notice_days") or 30
+        cleaned_data["governing_law"] = cleaned_data.get("governing_law") or "Uganda"
         if cleaned_data.get("service_type") != models.Contract.ServiceType.OTHERS:
             for field_name in self.DELIVERABLE_FIELDS:
                 cleaned_data[field_name] = 0

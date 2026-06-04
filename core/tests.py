@@ -429,6 +429,66 @@ class ContractDeliverableFormTests(TestCase):
         self.assertEqual(contract.dog_rate, 0)
         self.assertEqual(contract.other_deliverables, "-")
 
+    def test_standard_contract_fields_are_saved(self):
+        form = ContractForm(
+            data={
+                **self.base_data,
+                "contract_number": "STD-CON-001",
+                "contract_title": "Manned Guarding Service Agreement",
+                "service_type": Contract.ServiceType.MANNED_GUARDING,
+                "client_representative": "Jane Client",
+                "client_representative_title": "Facilities Manager",
+                "client_representative_email": "jane@example.com",
+                "company_representative": "John Sentinel",
+                "company_representative_title": "Operations Director",
+                "signed_date": "2026-01-01",
+                "end_date": "2026-12-31",
+                "contract_value": "12000000.00",
+                "currency": "UGX",
+                "billing_cycle": Contract.BillingCycle.MONTHLY,
+                "payment_terms_days": "14",
+                "payment_instructions": "Invoice payable by bank transfer.",
+                "service_scope": "Provide trained guards and supervision.",
+                "service_location": "Kampala sites",
+                "service_hours": "24/7",
+                "response_time_sla": "30 minutes",
+                "supervision_frequency": "Daily",
+                "guard_training_requirements": "Licensed and inducted guards.",
+                "client_obligations": "Provide access and site briefing.",
+                "company_obligations": "Provide guards, supervision, and reports.",
+                "confidentiality_clause": "Both parties keep operational information confidential.",
+                "liability_limit": "Limited to one month of fees.",
+                "termination_notice_days": "30",
+                "renewal_terms": "Renewable by written agreement.",
+                "governing_law": "Uganda",
+                "special_conditions": "Night patrol included.",
+                "terms": "Standard security services terms.",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        contract = form.save()
+
+        self.assertEqual(contract.contract_title, "Manned Guarding Service Agreement")
+        self.assertEqual(contract.client_representative, "Jane Client")
+        self.assertEqual(contract.billing_cycle, Contract.BillingCycle.MONTHLY)
+        self.assertEqual(contract.payment_terms_days, 14)
+        self.assertEqual(contract.termination_notice_days, 30)
+        self.assertEqual(contract.service_hours, "24/7")
+
+    def test_contract_end_date_cannot_be_before_start_date(self):
+        form = ContractForm(
+            data={
+                **self.base_data,
+                "contract_number": "BAD-DATES-001",
+                "service_type": Contract.ServiceType.MANNED_GUARDING,
+                "end_date": "2025-12-31",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("end_date", form.errors)
+
 
 class ContractSiteRequirementFormTests(TestCase):
     def test_requirement_creates_site_code_and_pulls_contract_deliverables(self):

@@ -205,17 +205,20 @@ class ClientAdmin(admin.ModelAdmin):
 class ContractAdmin(admin.ModelAdmin):
     list_display = (
         "contract_number",
+        "contract_title",
         "client",
         "service_type",
+        "billing_cycle",
         "required_guards",
         "other_deliverables",
         "start_date",
         "end_date",
         "billing_rate",
+        "contract_value",
         "status",
     )
-    list_filter = ("status", "service_type")
-    search_fields = ("contract_number", "client__client_name", "terms")
+    list_filter = ("status", "service_type", "billing_cycle")
+    search_fields = ("contract_number", "contract_title", "client__client_name", "terms", "service_scope")
     date_hierarchy = "start_date"
 
 

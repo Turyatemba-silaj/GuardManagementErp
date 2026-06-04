@@ -259,17 +259,49 @@ class Contract(TimeStampedModel):
         WORKFORCE_CONTROL = "Workforce Control", "Workforce Control"
         OTHERS = "Others", "Others"
 
+    class BillingCycle(models.TextChoices):
+        MONTHLY = "monthly", "Monthly"
+        QUARTERLY = "quarterly", "Quarterly"
+        ANNUALLY = "annually", "Annually"
+        ONE_TIME = "one_time", "One Time"
+
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="contracts")
     contract_number = models.CharField(max_length=80, unique=True)
+    contract_title = models.CharField(max_length=180, blank=True)
     service_type = models.CharField(
         max_length=120,
         choices=ServiceType.choices,
         default=ServiceType.MANNED_GUARDING,
     )
+    client_representative = models.CharField(max_length=150, blank=True)
+    client_representative_title = models.CharField(max_length=120, blank=True)
+    client_representative_email = models.EmailField(blank=True)
+    company_representative = models.CharField(max_length=150, blank=True)
+    company_representative_title = models.CharField(max_length=120, blank=True)
+    signed_date = models.DateField(null=True, blank=True)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     billing_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    contract_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    currency = models.CharField(max_length=3, default="UGX")
+    billing_cycle = models.CharField(max_length=20, choices=BillingCycle.choices, default=BillingCycle.MONTHLY)
+    payment_terms_days = models.PositiveIntegerField(default=30)
+    payment_instructions = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.ACTIVE)
+    service_scope = models.TextField(blank=True)
+    service_location = models.CharField(max_length=180, blank=True)
+    service_hours = models.CharField(max_length=120, blank=True)
+    response_time_sla = models.CharField("Response time SLA", max_length=120, blank=True)
+    supervision_frequency = models.CharField(max_length=120, blank=True)
+    guard_training_requirements = models.TextField(blank=True)
+    client_obligations = models.TextField(blank=True)
+    company_obligations = models.TextField(blank=True)
+    confidentiality_clause = models.TextField(blank=True)
+    liability_limit = models.CharField(max_length=180, blank=True)
+    termination_notice_days = models.PositiveIntegerField(default=30)
+    renewal_terms = models.TextField(blank=True)
+    governing_law = models.CharField(max_length=120, blank=True, default="Uganda")
+    special_conditions = models.TextField(blank=True)
     dog_count = models.PositiveIntegerField(default=0)
     dog_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     metal_detector_count = models.PositiveIntegerField(default=0)
@@ -287,6 +319,23 @@ class Contract(TimeStampedModel):
 
     def __str__(self):
         return f"{self.contract_number} - {self.client}"
+
+    def clean(self):
+        super().clean()
+        if self.end_date and self.start_date and self.end_date < self.start_date:
+            raise ValidationError({"end_date": "Contract end date cannot be before start date."})
+        validate_non_negative_fields(
+            self,
+            (
+                "billing_rate",
+                "contract_value",
+                "dog_rate",
+                "metal_detector_rate",
+                "walk_through_detector_rate",
+                "panic_baton_rate",
+                "handcuffs_rate",
+            ),
+        )
 
     @property
     def required_guards(self):
