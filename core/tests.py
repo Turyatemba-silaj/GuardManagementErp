@@ -519,6 +519,73 @@ class AdminRolePermissionTests(TestCase):
         self.assertContains(response, "User permissions")
         self.assertContains(response, "Superuser status")
 
+    def test_system_admin_can_manage_role_permissions_in_erp(self):
+        role = Group.objects.create(name="Client Viewer")
+        permission = Permission.objects.get(codename="view_client")
+
+        response = self.client.post(
+            reverse("core:role_edit", args=[role.pk]),
+            {
+                "name": role.name,
+                "permissions": [str(permission.pk)],
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        role.refresh_from_db()
+        self.assertIn(permission, role.permissions.all())
+
+    def test_system_admin_can_open_erp_role_and_user_forms(self):
+        role_response = self.client.get(reverse("core:role_add"))
+        user_response = self.client.get(reverse("core:user_add"))
+
+        self.assertEqual(role_response.status_code, 200)
+        self.assertContains(role_response, "Add Role")
+        self.assertContains(role_response, "Can add client")
+        self.assertEqual(user_response.status_code, 200)
+        self.assertContains(user_response, "Add User")
+        self.assertContains(user_response, "Roles")
+
+    def test_system_admin_can_assign_roles_to_user_in_erp(self):
+        role = Group.objects.create(name="Client Operators")
+        target = User.objects.create_user(username="operator", password="pass", is_staff=True)
+        permission = Permission.objects.get(codename="view_client")
+
+        response = self.client.post(
+            reverse("core:user_edit", args=[target.pk]),
+            {
+                "username": target.username,
+                "first_name": "Ops",
+                "last_name": "User",
+                "email": "ops@example.com",
+                "password": "",
+                "groups": [str(role.pk)],
+                "user_permissions": [str(permission.pk)],
+                "is_active": "on",
+                "is_staff": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        target.refresh_from_db()
+        self.assertIn(role, target.groups.all())
+        self.assertIn(permission, target.user_permissions.all())
+
+    def test_non_admin_cannot_open_erp_role_management(self):
+        viewer = User.objects.create_user(username="viewer", password="pass")
+        self.client.force_login(viewer)
+
+        response = self.client.get(reverse("core:role_list"))
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_sidebar_shows_user_access_for_system_admin(self):
+        response = self.client.get(reverse("core:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Users")
+        self.assertContains(response, "Roles &amp; Permissions")
+
 
 class FinanceCalculationTests(TestCase):
     def setUp(self):

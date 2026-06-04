@@ -1,6 +1,6 @@
 from django.urls import reverse
 
-from .access import can_access_internal, can_manage_attendance, can_manage_slug, is_manager
+from .access import can_access_internal, can_manage_attendance, can_manage_roles, can_manage_slug, is_manager
 from .crud import visible_grouped_registry
 
 
@@ -101,6 +101,13 @@ def build_sidebar_nav(groups, can_manage_payroll, user):
         )
 
     admin = [nav_item("Public Home", reverse("core:home"), "fa-house")]
+    if can_manage_roles(user):
+        admin.extend(
+            [
+                nav_item("Users", reverse("core:user_list"), "fa-user-shield"),
+                nav_item("Roles & Permissions", reverse("core:role_list"), "fa-users-gear"),
+            ]
+        )
     if user.is_superuser:
         admin.append(nav_item("System Admin", "/admin/", "fa-screwdriver-wrench"))
 

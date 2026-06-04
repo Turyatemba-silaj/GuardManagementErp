@@ -1,0 +1,95 @@
+{% extends "core/base.html" %}
+
+{% block title %}{{ mode }} Role{% endblock %}
+{% block page_label %}Roles & Permissions{% endblock %}
+
+{% block extra_head %}
+<style>
+    .permission-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        padding: 18px;
+    }
+    .permission-group {
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        background: #fff;
+        overflow: hidden;
+    }
+    .permission-group h2 {
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--sentinel-line);
+        background: #f8fafc;
+        font-size: 13px;
+    }
+    .permission-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding: 12px;
+    }
+    .check-row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 650;
+        color: var(--sentinel-text);
+    }
+    .role-name-row {
+        padding: 18px;
+        border-bottom: 1px solid var(--sentinel-line);
+    }
+    @media (max-width: 980px) {
+        .permission-grid,
+        .permission-options {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>{{ mode }} Role</h1>
+            <p class="muted">Assign model-level permissions to this role.</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:role_list' %}">Back to Roles</a>
+    </div>
+    <form method="post">
+        {% csrf_token %}
+        <div class="role-name-row">
+            {{ form.non_field_errors }}
+            <div class="field">
+                {{ form.name.label_tag }}
+                {{ form.name }}
+                {{ form.name.errors }}
+            </div>
+            {{ form.permissions.errors }}
+        </div>
+        <div class="permission-grid">
+            {% for group in permission_groups %}
+                <section class="permission-group">
+                    <h2>{{ group.label }}</h2>
+                    <div class="permission-options">
+                        {% for item in group.items %}
+                            <label class="check-row">
+                                <input type="checkbox" name="permissions" value="{{ item.permission.pk }}" {% if item.checked %}checked{% endif %}>
+                                <span>{{ item.permission.name }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endfor %}
+        </div>
+        <div class="save-row">
+            <div class="actions">
+                <a class="btn btn-light" href="{% url 'core:role_list' %}">Cancel</a>
+                <button class="btn btn-success" type="submit">Save Role</button>
+            </div>
+        </div>
+    </form>
+</section>
+{% endblock %}

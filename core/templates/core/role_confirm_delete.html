@@ -1,0 +1,24 @@
+{% extends "core/base.html" %}
+
+{% block title %}Delete Role{% endblock %}
+{% block page_label %}Roles & Permissions{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>Delete Role</h1>
+            <p class="muted">{{ role.name }}</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:role_list' %}">Back</a>
+    </div>
+    <form class="delete-body" method="post">
+        {% csrf_token %}
+        <p>Delete <strong>{{ role.name }}</strong>? Users in this role will lose the permissions attached to it.</p>
+        <div class="form-actions">
+            <a class="btn btn-light" href="{% url 'core:role_list' %}">Cancel</a>
+            <button class="btn btn-danger" type="submit">Delete</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

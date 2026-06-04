@@ -46,6 +46,14 @@ def is_manager(user):
     )
 
 
+def can_manage_roles(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser or in_group(user, SYSTEM_ADMIN_GROUP):
+        return True
+    return user.has_perm("auth.view_group") and user.has_perm("auth.change_group") and user.has_perm("auth.change_user")
+
+
 def is_supervisor(user):
     return user.is_authenticated and (user.is_superuser or in_group(user, SUPERVISOR_GROUP))
 

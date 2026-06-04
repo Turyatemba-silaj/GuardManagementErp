@@ -13,7 +13,9 @@ from xml.sax.saxutils import escape as xml_escape
 
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, connection
 from django.db import transaction
@@ -35,10 +37,10 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from . import models
-from .access import can_access_internal, can_manage_attendance, can_manage_slug, has_model_perm, is_manager, is_supervisor
+from .access import can_access_internal, can_manage_attendance, can_manage_roles, can_manage_slug, has_model_perm, is_manager, is_supervisor
 from .accounting import ensure_default_accounts, post_all_accounting
 from .crud import MODEL_REGISTRY, visible_grouped_registry
-from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm, SecureModelForm
+from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm, RolePermissionForm, SecureModelForm, UserRoleForm
 from .security import file_extension, validate_excel_upload, validate_schedule_upload
 
 
@@ -342,6 +344,127 @@ def dashboard(request):
         "model_groups": visible_groups,
     }
     return render(request, "core/dashboard.html", context)
+
+
+def permission_groups(selected_permissions=None):
+    selected_ids = set(selected_permissions.values_list("id", flat=True)) if selected_permissions is not None else set()
+    grouped = defaultdict(list)
+    permissions = Permission.objects.select_related("content_type").order_by(
+        "content_type__app_label",
+        "content_type__model",
+        "codename",
+    )
+    for permission in permissions:
+        label = f"{permission.content_type.app_label}.{permission.content_type.model}"
+        grouped[label].append(
+            {
+                "permission": permission,
+                "checked": permission.id in selected_ids,
+            }
+        )
+    return [{"label": label, "items": items} for label, items in grouped.items()]
+
+
+@login_required
+@user_passes_test(can_manage_roles)
+def role_list(request):
+    roles = Group.objects.prefetch_related("permissions", "user_set").order_by("name")
+    rows = [
+        {
+            "role": role,
+            "permission_count": role.permissions.count(),
+            "user_count": role.user_set.count(),
+        }
+        for role in roles
+    ]
+    return render(request, "core/role_list.html", {"rows": rows})
+
+
+@login_required
+@user_passes_test(can_manage_roles)
+def role_create(request):
+    form = RolePermissionForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        role = form.save()
+        messages.success(request, f"Role {role.name} was created.")
+        return redirect("core:role_list")
+    return render(
+        request,
+        "core/role_form.html",
+        {"form": form, "mode": "Add", "permission_groups": permission_groups()},
+    )
+
+
+@login_required
+@user_passes_test(can_manage_roles)
+def role_update(request, pk):
+    role = get_object_or_404(Group, pk=pk)
+    form = RolePermissionForm(request.POST or None, instance=role)
+    if request.method == "POST" and form.is_valid():
+        role = form.save()
+        messages.success(request, f"Role {role.name} was updated.")
+        return redirect("core:role_list")
+    return render(
+        request,
+        "core/role_form.html",
+        {"form": form, "mode": "Edit", "role": role, "permission_groups": permission_groups(role.permissions.all())},
+    )
+
+
+@login_required
+@user_passes_test(can_manage_roles)
+def role_delete(request, pk):
+    role = get_object_or_404(Group, pk=pk)
+    if request.method == "POST":
+        name = role.name
+        role.delete()
+        messages.success(request, f"Role {name} was deleted.")
+        return redirect("core:role_list")
+    return render(request, "core/role_confirm_delete.html", {"role": role})
+
+
+@login_required
+@user_passes_test(can_manage_roles)
+def user_list(request):
+    User = get_user_model()
+    query = request.GET.get("q", "").strip()
+    users = User.objects.prefetch_related("groups").order_by("username")
+    if query:
+        users = users.filter(
+            Q(username__icontains=query)
+            | Q(first_name__icontains=query)
+            | Q(last_name__icontains=query)
+            | Q(email__icontains=query)
+        )
+    return render(request, "core/user_list.html", {"users": users[:200], "search_query": query})
+
+
+@login_required
+@user_passes_test(can_manage_roles)
+def user_create(request):
+    form = UserRoleForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        messages.success(request, f"User {user.username} was created.")
+        return redirect("core:user_list")
+    return render(request, "core/user_form.html", {"form": form, "mode": "Add", "permission_groups": permission_groups()})
+
+
+@login_required
+@user_passes_test(can_manage_roles)
+def user_update(request, pk):
+    User = get_user_model()
+    user = get_object_or_404(User, pk=pk)
+    form = UserRoleForm(request.POST or None, instance=user)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        messages.success(request, f"User {user.username} was updated.")
+        return redirect("core:user_list")
+    return render(
+        request,
+        "core/user_form.html",
+        {"form": form, "mode": "Edit", "managed_user": user, "permission_groups": permission_groups(user.user_permissions.all())},
+    )
 
 
 @login_required

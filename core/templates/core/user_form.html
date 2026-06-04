@@ -1,0 +1,128 @@
+{% extends "core/base.html" %}
+
+{% block title %}{{ mode }} User{% endblock %}
+{% block page_label %}User Access{% endblock %}
+
+{% block extra_head %}
+<style>
+    .access-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .access-section {
+        grid-column: 1 / -1;
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        background: #fff;
+    }
+    .access-section h2 {
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--sentinel-line);
+        font-size: 15px;
+    }
+    .check-list,
+    .permission-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    .check-list label,
+    .check-row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 650;
+    }
+    .permission-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+    }
+    .permission-group {
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .permission-group h3 {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--sentinel-line);
+        background: #f8fafc;
+        font-size: 13px;
+    }
+    .permission-group .permission-options {
+        padding: 12px;
+    }
+    @media (max-width: 980px) {
+        .access-form,
+        .check-list,
+        .permission-grid,
+        .permission-options {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h1>{{ mode }} User</h1>
+            <p class="muted">{% if managed_user %}{{ managed_user.username }}{% else %}Create an operator account{% endif %}</p>
+        </div>
+        <a class="btn btn-light" href="{% url 'core:user_list' %}">Back to Users</a>
+    </div>
+    <form class="form-card access-form" method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="field">{{ form.username.label_tag }}{{ form.username }}{{ form.username.errors }}</div>
+        <div class="field">{{ form.email.label_tag }}{{ form.email }}{{ form.email.errors }}</div>
+        <div class="field">{{ form.first_name.label_tag }}{{ form.first_name }}{{ form.first_name.errors }}</div>
+        <div class="field">{{ form.last_name.label_tag }}{{ form.last_name }}{{ form.last_name.errors }}</div>
+        <div class="field">{{ form.password.label_tag }}{{ form.password }}{% if form.password.help_text %}<span class="helptext">{{ form.password.help_text }}</span>{% endif %}{{ form.password.errors }}</div>
+        <section class="access-section">
+            <h2>Status</h2>
+            <div class="check-list">
+                <label>{{ form.is_active }} <span>{{ form.is_active.label }}</span></label>
+                <label>{{ form.is_staff }} <span>{{ form.is_staff.label }}</span></label>
+            </div>
+        </section>
+        <section class="access-section">
+            <h2>Roles</h2>
+            {{ form.groups.errors }}
+            <div class="check-list">
+                {{ form.groups }}
+            </div>
+        </section>
+        <section class="access-section">
+            <h2>Direct Permissions</h2>
+            {% if form.user_permissions.help_text %}<p class="muted">{{ form.user_permissions.help_text }}</p>{% endif %}
+            {{ form.user_permissions.errors }}
+            <div class="permission-grid">
+                {% for group in permission_groups %}
+                    <section class="permission-group">
+                        <h3>{{ group.label }}</h3>
+                        <div class="permission-options">
+                            {% for item in group.items %}
+                                <label class="check-row">
+                                    <input type="checkbox" name="user_permissions" value="{{ item.permission.pk }}" {% if item.checked %}checked{% endif %}>
+                                    <span>{{ item.permission.name }}</span>
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </section>
+                {% endfor %}
+            </div>
+        </section>
+        <div class="form-actions">
+            <a class="btn btn-light" href="{% url 'core:user_list' %}">Cancel</a>
+            <button class="btn btn-success" type="submit">Save User</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

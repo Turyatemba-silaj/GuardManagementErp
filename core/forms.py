@@ -1,8 +1,14 @@
 from django import forms
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group, Permission
+from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
 from . import models
 from .security import validate_model_upload
+
+
+User = get_user_model()
 
 
 class SecureModelForm(forms.ModelForm):
@@ -11,6 +17,94 @@ class SecureModelForm(forms.ModelForm):
         for field_name, uploaded_file in self.files.items():
             validate_model_upload(field_name, uploaded_file)
         return cleaned_data
+
+
+class RolePermissionForm(forms.ModelForm):
+    permissions = forms.ModelMultipleChoiceField(
+        queryset=Permission.objects.select_related("content_type").order_by(
+            "content_type__app_label",
+            "content_type__model",
+            "codename",
+        ),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text="Select exactly what users in this role can view, add, change, or delete.",
+    )
+
+    class Meta:
+        model = Group
+        fields = ("name", "permissions")
+        labels = {"name": "Role Name"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+
+
+class UserRoleForm(forms.ModelForm):
+    password = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(render_value=False),
+        help_text="Leave blank to keep the current password.",
+    )
+    groups = forms.ModelMultipleChoiceField(
+        label="Roles",
+        queryset=Group.objects.order_by("name"),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+    )
+    user_permissions = forms.ModelMultipleChoiceField(
+        label="Direct Permissions",
+        queryset=Permission.objects.select_related("content_type").order_by(
+            "content_type__app_label",
+            "content_type__model",
+            "codename",
+        ),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text="Use direct permissions for exceptions. Prefer roles for normal access.",
+    )
+
+    class Meta:
+        model = User
+        fields = (
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "password",
+            "groups",
+            "user_permissions",
+            "is_active",
+            "is_staff",
+        )
+        labels = {"is_staff": "Can access staff areas"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+        for checkbox_name in ("groups", "user_permissions", "is_active", "is_staff"):
+            self.fields[checkbox_name].widget.attrs.pop("class", None)
+
+    def clean_password(self):
+        password = self.cleaned_data.get("password")
+        if not self.instance.pk and not password:
+            raise forms.ValidationError("Enter an initial password for this user.")
+        if password:
+            validate_password(password, self.instance)
+        return password
+
+    def save(self, commit=True):
+        password = self.cleaned_data.pop("password", "")
+        user = super().save(commit=False)
+        if password:
+            user.set_password(password)
+        if commit:
+            user.save()
+            self.save_m2m()
+        return user
 
 
 class ContractForm(SecureModelForm):
