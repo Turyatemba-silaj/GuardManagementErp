@@ -403,6 +403,217 @@ class ContractForm(SecureModelForm):
         return cleaned_data
 
 
+class IncidentForm(SecureModelForm):
+    SUPERVISOR_READONLY_FIELDS = (
+        "workflow_status",
+        "assigned_manager",
+        "management_action_plan",
+        "action_taken",
+        "root_cause",
+        "corrective_action",
+        "preventive_action",
+        "follow_up_required",
+        "follow_up_due_date",
+        "follow_up_notes",
+        "closure_summary",
+        "management_notes",
+        "status",
+    )
+
+    class Meta:
+        model = models.Incident
+        fields = (
+            "deployment",
+            "site",
+            "employee",
+            "incident_reference",
+            "incident_type",
+            "category",
+            "description",
+            "incident_date",
+            "reported_at",
+            "location",
+            "severity_level",
+            "reported_by",
+            "immediate_action_taken",
+            "witness_names",
+            "injury_reported",
+            "property_damage_reported",
+            "estimated_loss_value",
+            "police_notified",
+            "police_reference",
+            "client_notified",
+            "client_notified_at",
+            "evidence_file",
+            "workflow_status",
+            "assigned_manager",
+            "management_action_plan",
+            "action_taken",
+            "root_cause",
+            "corrective_action",
+            "preventive_action",
+            "follow_up_required",
+            "follow_up_due_date",
+            "follow_up_notes",
+            "closure_summary",
+            "management_notes",
+            "status",
+        )
+        labels = {
+            "incident_reference": "Incident Reference",
+            "incident_type": "Incident Type",
+            "incident_date": "Incident Date and Time",
+            "reported_at": "Reported At",
+            "reported_by": "Reported By Supervisor",
+            "immediate_action_taken": "Immediate Action Taken by Supervisor",
+            "witness_names": "Witness Names",
+            "injury_reported": "Injury Reported",
+            "property_damage_reported": "Property Damage Reported",
+            "estimated_loss_value": "Estimated Loss Value",
+            "police_notified": "Police Notified",
+            "police_reference": "Police Reference",
+            "client_notified": "Client Notified",
+            "client_notified_at": "Client Notified At",
+            "evidence_file": "Evidence / Photos / Report",
+            "workflow_status": "Management Workflow Status",
+            "assigned_manager": "Assigned Manager",
+            "management_action_plan": "Management Action Plan",
+            "action_taken": "Action Taken by Management",
+            "root_cause": "Root Cause",
+            "corrective_action": "Corrective Action",
+            "preventive_action": "Preventive Action",
+            "follow_up_required": "Follow-up Required",
+            "follow_up_due_date": "Follow-up Due Date",
+            "follow_up_notes": "Follow-up Notes",
+            "closure_summary": "Closure Summary",
+            "management_notes": "Management Notes",
+        }
+        widgets = {
+            "incident_date": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+            "reported_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+            "client_notified_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+            "follow_up_due_date": forms.DateInput(attrs={"type": "date"}),
+            "description": forms.Textarea(attrs={"rows": 4}),
+            "immediate_action_taken": forms.Textarea(attrs={"rows": 3}),
+            "witness_names": forms.Textarea(attrs={"rows": 2}),
+            "management_action_plan": forms.Textarea(attrs={"rows": 3}),
+            "action_taken": forms.Textarea(attrs={"rows": 3}),
+            "root_cause": forms.Textarea(attrs={"rows": 3}),
+            "corrective_action": forms.Textarea(attrs={"rows": 3}),
+            "preventive_action": forms.Textarea(attrs={"rows": 3}),
+            "follow_up_notes": forms.Textarea(attrs={"rows": 3}),
+            "closure_summary": forms.Textarea(attrs={"rows": 3}),
+            "management_notes": forms.Textarea(attrs={"rows": 3}),
+            "evidence_file": forms.FileInput(attrs={"accept": ".pdf,.doc,.docx,.jpg,.jpeg,.png"}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+        for field_name in (
+            "injury_reported",
+            "property_damage_reported",
+            "police_notified",
+            "client_notified",
+            "follow_up_required",
+        ):
+            self.fields[field_name].widget.attrs.pop("class", None)
+        for field_name in ("incident_date", "reported_at", "client_notified_at"):
+            self.fields[field_name].input_formats = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S"]
+        self.fields["incident_reference"].required = False
+        self.fields["site"].required = False
+        self.fields["reported_at"].required = False
+        self.fields["reported_by"].required = False
+        self.fields["estimated_loss_value"].required = False
+        self.fields["workflow_status"].required = False
+        self.fields["status"].required = False
+        self.fields["assigned_manager"].queryset = models.Employee.objects.order_by("first_name", "last_name")
+        self.fields["reported_by"].queryset = models.Employee.objects.order_by("first_name", "last_name")
+
+        if not self.is_management_user():
+            for field_name in self.SUPERVISOR_READONLY_FIELDS:
+                self.fields[field_name].disabled = True
+                self.fields[field_name].required = False
+            self.fields["workflow_status"].initial = models.Incident.WorkflowStatus.SUBMITTED
+            self.fields["status"].initial = models.StatusChoices.PENDING
+
+    def is_management_user(self):
+        if not self.user or not self.user.is_authenticated:
+            return False
+        return self.user.is_superuser or self.user.groups.filter(name__in=["System Administrator", "Manager", "Human Resources Manager"]).exists()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        deployment = cleaned_data.get("deployment")
+        site = cleaned_data.get("site")
+        employee = cleaned_data.get("employee")
+        if deployment:
+            if not site:
+                cleaned_data["site"] = deployment.site
+            elif deployment.site_id != site.id:
+                self.add_error("site", "Incident site must match the selected deployment site.")
+            if employee and deployment.employee_id != employee.id:
+                self.add_error("employee", "Incident employee must match the selected deployment employee.")
+
+        if not cleaned_data.get("reported_at"):
+            cleaned_data["reported_at"] = timezone.now()
+        if not cleaned_data.get("estimated_loss_value"):
+            cleaned_data["estimated_loss_value"] = 0
+
+        if not self.is_management_user():
+            cleaned_data["workflow_status"] = models.Incident.WorkflowStatus.SUBMITTED
+            cleaned_data["status"] = models.StatusChoices.PENDING
+            for field_name in self.SUPERVISOR_READONLY_FIELDS:
+                if field_name not in {"workflow_status", "status"}:
+                    cleaned_data[field_name] = getattr(self.instance, field_name, None)
+        else:
+            workflow_status = cleaned_data.get("workflow_status") or models.Incident.WorkflowStatus.UNDER_REVIEW
+            if workflow_status == models.Incident.WorkflowStatus.CLOSED and not cleaned_data.get("closure_summary"):
+                self.add_error("closure_summary", "Enter a closure summary before closing the incident.")
+            if workflow_status in {
+                models.Incident.WorkflowStatus.UNDER_REVIEW,
+                models.Incident.WorkflowStatus.ACTION_REQUIRED,
+                models.Incident.WorkflowStatus.AWAITING_FOLLOW_UP,
+                models.Incident.WorkflowStatus.RESOLVED,
+                models.Incident.WorkflowStatus.CLOSED,
+            } and not cleaned_data.get("management_action_plan") and not cleaned_data.get("action_taken"):
+                self.add_error("management_action_plan", "Record management's action plan or action taken.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        incident = super().save(commit=False)
+        if self.user and self.user.is_authenticated:
+            if not incident.reported_by_user_id:
+                incident.reported_by_user = self.user
+            if not incident.reported_by_id:
+                try:
+                    incident.reported_by = self.user.employee_profile
+                except Exception:
+                    pass
+            if self.is_management_user() and incident.workflow_status in {
+                models.Incident.WorkflowStatus.UNDER_REVIEW,
+                models.Incident.WorkflowStatus.ACTION_REQUIRED,
+                models.Incident.WorkflowStatus.AWAITING_FOLLOW_UP,
+                models.Incident.WorkflowStatus.RESOLVED,
+                models.Incident.WorkflowStatus.CLOSED,
+            }:
+                if not incident.management_reviewed_by_id:
+                    incident.management_reviewed_by = self.user
+                if not incident.management_reviewed_at:
+                    incident.management_reviewed_at = timezone.now()
+                if incident.workflow_status == models.Incident.WorkflowStatus.CLOSED:
+                    if not incident.closed_by_id:
+                        incident.closed_by = self.user
+                    if not incident.closed_at:
+                        incident.closed_at = timezone.now()
+        if commit:
+            incident.save()
+            self.save_m2m()
+        return incident
+
+
 class ContractSiteRequirementForm(SecureModelForm):
     client = forms.ModelChoiceField(
         queryset=models.Client.objects.order_by("client_name"),

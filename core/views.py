@@ -40,7 +40,7 @@ from . import models
 from .access import can_access_internal, can_manage_attendance, can_manage_roles, can_manage_slug, has_model_perm, is_manager, is_supervisor
 from .accounting import ensure_default_accounts, post_all_accounting
 from .crud import MODEL_REGISTRY, visible_grouped_registry
-from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm, RolePermissionForm, SecureModelForm, UserRoleForm
+from .forms import ContractForm, ContractSiteRequirementForm, IncidentForm, InvoiceForm, RolePermissionForm, SecureModelForm, UserRoleForm
 from .security import file_extension, validate_excel_upload, validate_schedule_upload
 
 
@@ -66,6 +66,8 @@ def build_model_form(model):
         return ContractForm
     if model is models.ContractSiteRequirement:
         return ContractSiteRequirementForm
+    if model is models.Incident:
+        return IncidentForm
     if model is models.Invoice:
         return InvoiceForm
     form = modelform_factory(
@@ -2894,7 +2896,8 @@ def record_create(request, slug):
         return redirect("core:attendances")
     config = get_model_config(slug)
     form_class = build_model_form(config.model)
-    form = form_class(request.POST or None, request.FILES or None)
+    form_kwargs = {"user": request.user} if form_class is IncidentForm else {}
+    form = form_class(request.POST or None, request.FILES or None, **form_kwargs)
     if request.method == "POST" and form.is_valid():
         if config.model is models.Invoice:
             instance = form.save()
@@ -2923,7 +2926,8 @@ def record_update(request, slug, pk):
     instance = get_object_or_404(scoped_queryset(request.user, slug, config.model.objects.all()), pk=pk)
     form_class = build_model_form(config.model)
     previous_attendance_date = instance.date if config.model is models.Attendance else None
-    form = form_class(request.POST or None, request.FILES or None, instance=instance)
+    form_kwargs = {"user": request.user} if form_class is IncidentForm else {}
+    form = form_class(request.POST or None, request.FILES or None, instance=instance, **form_kwargs)
     if request.method == "POST" and form.is_valid():
         if config.model is models.Invoice:
             form.save()

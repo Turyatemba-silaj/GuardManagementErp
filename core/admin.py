@@ -372,10 +372,22 @@ class RosterAttendanceAdmin(admin.ModelAdmin):
 
 @admin.register(models.Incident)
 class IncidentAdmin(admin.ModelAdmin):
-    list_display = ("incident_type", "deployment", "employee", "incident_date", "severity_level", "status")
-    list_filter = ("severity_level", "status", "incident_type")
-    search_fields = ("incident_type", "description", "location", "employee__company_number")
+    list_display = (
+        "incident_reference",
+        "incident_type",
+        "category",
+        "site",
+        "employee",
+        "incident_date",
+        "severity_level",
+        "workflow_status",
+        "assigned_manager",
+        "status",
+    )
+    list_filter = ("severity_level", "workflow_status", "status", "category", "incident_type")
+    search_fields = ("incident_reference", "incident_type", "description", "location", "employee__company_number", "site__site_name")
     date_hierarchy = "incident_date"
+    autocomplete_fields = ("deployment", "site", "employee", "reported_by", "assigned_manager")
 
 
 @admin.register(models.PatrolLog)

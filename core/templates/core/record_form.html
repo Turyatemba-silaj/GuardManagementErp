@@ -188,6 +188,49 @@
     }
 </style>
 {% endif %}
+{% if slug == "incidents" %}
+<style>
+    .incident-form {
+        grid-template-columns: 1fr;
+    }
+    .incident-section {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        padding: 16px;
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        background: #fff;
+    }
+    .incident-section h2 {
+        grid-column: 1 / -1;
+        font-size: 15px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--sentinel-line);
+    }
+    .incident-section .field-wide {
+        grid-column: 1 / -1;
+    }
+    .check-field {
+        align-content: end;
+    }
+    .check-field label {
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+    }
+    @media (max-width: 720px) {
+        .incident-section {
+            grid-template-columns: 1fr;
+        }
+        .incident-section .field-wide {
+            grid-column: auto;
+        }
+    }
+</style>
+{% endif %}
 {% if slug == "contract-site-requirements" %}
 <style>
     .contract-requirement-form {
@@ -268,7 +311,7 @@
             <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Back to {{ config.title }}</a>
         {% endif %}
     </div>
-    <form id="record-form" class="form-card {% if slug == 'employees' %}employee-form-card{% endif %}{% if slug == 'contracts' %} contract-form{% endif %}{% if slug == 'contract-site-requirements' %} contract-requirement-form{% endif %}" method="post" enctype="multipart/form-data">
+    <form id="record-form" class="form-card {% if slug == 'employees' %}employee-form-card{% endif %}{% if slug == 'contracts' %} contract-form{% endif %}{% if slug == 'incidents' %} incident-form{% endif %}{% if slug == 'contract-site-requirements' %} contract-requirement-form{% endif %}" method="post" enctype="multipart/form-data">
         {% csrf_token %}
         {% if slug == "contracts" %}
             {{ form.non_field_errors }}
@@ -388,6 +431,52 @@
                 <div class="field">{{ form.governing_law.label_tag }}{{ form.governing_law }}{{ form.governing_law.errors }}</div>
                 <div class="field field-wide">{{ form.special_conditions.label_tag }}{{ form.special_conditions }}{{ form.special_conditions.errors }}</div>
                 <div class="field field-wide">{{ form.terms.label_tag }}{{ form.terms }}{{ form.terms.errors }}</div>
+            </section>
+        {% elif slug == "incidents" %}
+            {{ form.non_field_errors }}
+            <section class="incident-section">
+                <h2>Supervisor Incident Log</h2>
+                <div class="field">{{ form.deployment.label_tag }}{{ form.deployment }}{{ form.deployment.errors }}</div>
+                <div class="field">{{ form.site.label_tag }}{{ form.site }}{{ form.site.errors }}</div>
+                <div class="field">{{ form.employee.label_tag }}{{ form.employee }}{{ form.employee.errors }}</div>
+                <div class="field">{{ form.incident_reference.label_tag }}{{ form.incident_reference }}{{ form.incident_reference.errors }}</div>
+                <div class="field">{{ form.incident_type.label_tag }}{{ form.incident_type }}{{ form.incident_type.errors }}</div>
+                <div class="field">{{ form.category.label_tag }}{{ form.category }}{{ form.category.errors }}</div>
+                <div class="field">{{ form.incident_date.label_tag }}{{ form.incident_date }}{{ form.incident_date.errors }}</div>
+                <div class="field">{{ form.reported_at.label_tag }}{{ form.reported_at }}{{ form.reported_at.errors }}</div>
+                <div class="field">{{ form.location.label_tag }}{{ form.location }}{{ form.location.errors }}</div>
+                <div class="field">{{ form.severity_level.label_tag }}{{ form.severity_level }}{{ form.severity_level.errors }}</div>
+                <div class="field">{{ form.reported_by.label_tag }}{{ form.reported_by }}{{ form.reported_by.errors }}</div>
+                <div class="field field-wide">{{ form.description.label_tag }}{{ form.description }}{{ form.description.errors }}</div>
+                <div class="field field-wide">{{ form.immediate_action_taken.label_tag }}{{ form.immediate_action_taken }}{{ form.immediate_action_taken.errors }}</div>
+                <div class="field field-wide">{{ form.witness_names.label_tag }}{{ form.witness_names }}{{ form.witness_names.errors }}</div>
+                <div class="field check-field"><label>{{ form.injury_reported }} <span>{{ form.injury_reported.label }}</span></label>{{ form.injury_reported.errors }}</div>
+                <div class="field check-field"><label>{{ form.property_damage_reported }} <span>{{ form.property_damage_reported.label }}</span></label>{{ form.property_damage_reported.errors }}</div>
+                <div class="field">{{ form.estimated_loss_value.label_tag }}{{ form.estimated_loss_value }}{{ form.estimated_loss_value.errors }}</div>
+                <div class="field check-field"><label>{{ form.police_notified }} <span>{{ form.police_notified.label }}</span></label>{{ form.police_notified.errors }}</div>
+                <div class="field">{{ form.police_reference.label_tag }}{{ form.police_reference }}{{ form.police_reference.errors }}</div>
+                <div class="field check-field"><label>{{ form.client_notified }} <span>{{ form.client_notified.label }}</span></label>{{ form.client_notified.errors }}</div>
+                <div class="field">{{ form.client_notified_at.label_tag }}{{ form.client_notified_at }}{{ form.client_notified_at.errors }}</div>
+                <div class="field field-wide">{{ form.evidence_file.label_tag }}{{ form.evidence_file }}{{ form.evidence_file.errors }}</div>
+            </section>
+            <section class="incident-section">
+                <h2>Management Review and Action</h2>
+                <div class="field">{{ form.workflow_status.label_tag }}{{ form.workflow_status }}{{ form.workflow_status.errors }}</div>
+                <div class="field">{{ form.assigned_manager.label_tag }}{{ form.assigned_manager }}{{ form.assigned_manager.errors }}</div>
+                <div class="field">{{ form.status.label_tag }}{{ form.status }}{{ form.status.errors }}</div>
+                <div class="field field-wide">{{ form.management_action_plan.label_tag }}{{ form.management_action_plan }}{{ form.management_action_plan.errors }}</div>
+                <div class="field field-wide">{{ form.action_taken.label_tag }}{{ form.action_taken }}{{ form.action_taken.errors }}</div>
+                <div class="field field-wide">{{ form.root_cause.label_tag }}{{ form.root_cause }}{{ form.root_cause.errors }}</div>
+                <div class="field field-wide">{{ form.corrective_action.label_tag }}{{ form.corrective_action }}{{ form.corrective_action.errors }}</div>
+                <div class="field field-wide">{{ form.preventive_action.label_tag }}{{ form.preventive_action }}{{ form.preventive_action.errors }}</div>
+                <div class="field field-wide">{{ form.management_notes.label_tag }}{{ form.management_notes }}{{ form.management_notes.errors }}</div>
+            </section>
+            <section class="incident-section">
+                <h2>Follow-up and Closure</h2>
+                <div class="field check-field"><label>{{ form.follow_up_required }} <span>{{ form.follow_up_required.label }}</span></label>{{ form.follow_up_required.errors }}</div>
+                <div class="field">{{ form.follow_up_due_date.label_tag }}{{ form.follow_up_due_date }}{{ form.follow_up_due_date.errors }}</div>
+                <div class="field field-wide">{{ form.follow_up_notes.label_tag }}{{ form.follow_up_notes }}{{ form.follow_up_notes.errors }}</div>
+                <div class="field field-wide">{{ form.closure_summary.label_tag }}{{ form.closure_summary }}{{ form.closure_summary.errors }}</div>
             </section>
         {% elif slug == "contract-site-requirements" %}
             {{ form.non_field_errors }}

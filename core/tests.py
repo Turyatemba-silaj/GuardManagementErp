@@ -32,6 +32,7 @@ from .models import (
     Attendance,
     AttendanceDevice,
     AttendanceDeviceEvent,
+    Incident,
     Invoice,
     JobOffer,
     JournalEntry,
@@ -58,7 +59,7 @@ from .models import (
 from .accounting import ensure_default_accounts, post_all_accounting, post_invoice, post_salary
 from .crud import MODEL_REGISTRY
 from .db_runtime import ensure_writable_sqlite_database
-from .forms import ContractForm, ContractSiteRequirementForm, InvoiceForm
+from .forms import ContractForm, ContractSiteRequirementForm, IncidentForm, InvoiceForm
 import security_management.settings as project_settings
 
 
@@ -626,6 +627,145 @@ class ContractSiteRequirementFormTests(TestCase):
         self.assertEqual(requirement.walk_through_machine_count, 1)
         self.assertEqual(requirement.panic_baton_count, 4)
         self.assertEqual(requirement.handcuffs_count, 5)
+
+
+class IncidentWorkflowFormTests(TestCase):
+    def setUp(self):
+        self.supervisor_user = User.objects.create_user(username="incident-supervisor", password="pass")
+        self.manager_user = User.objects.create_user(username="incident-manager", password="pass")
+        manager_group, _ = Group.objects.get_or_create(name="Manager")
+        self.manager_user.groups.add(manager_group)
+        self.role = Role.objects.create(role_name="Incident Guard", department=DepartmentChoices.OPERATIONS)
+        self.supervisor = Employee.objects.create(
+            user=self.supervisor_user,
+            first_name="Sarah",
+            last_name="Supervisor",
+            phone_number="0700000300",
+            email="sarah.supervisor@example.com",
+            national_id="INC-SUP-001",
+            role=self.role,
+        )
+        self.manager = Employee.objects.create(
+            user=self.manager_user,
+            first_name="Mary",
+            last_name="Manager",
+            phone_number="0700000301",
+            email="mary.manager@example.com",
+            national_id="INC-MGR-001",
+            role=self.role,
+        )
+        self.guard = Employee.objects.create(
+            first_name="Ivan",
+            last_name="Guard",
+            phone_number="0700000302",
+            email="ivan.guard@example.com",
+            national_id="INC-GRD-001",
+            role=self.role,
+            company_number="IG001",
+        )
+        self.client_record = Client.objects.create(
+            client_name="Incident Client",
+            contact_person="A",
+            phone_number="0700000303",
+            contract_start_date="2026-01-01",
+        )
+        self.site = Site.objects.create(
+            client=self.client_record,
+            site_name="Incident Site",
+            site_address="Plot 7",
+            city="Kampala",
+        )
+        self.shift = Shift.objects.create(
+            shift_name="Incident Day",
+            code="ID",
+            start_time="06:00",
+            end_time="18:00",
+        )
+        self.deployment = Deployment.objects.create(
+            employee=self.guard,
+            client=self.client_record,
+            site=self.site,
+            supervisor=self.supervisor,
+            shift=self.shift,
+            start_date="2026-06-01",
+        )
+        self.base_data = {
+            "deployment": self.deployment.pk,
+            "site": self.site.pk,
+            "employee": self.guard.pk,
+            "incident_type": "Unauthorized access attempt",
+            "category": Incident.IncidentCategory.SECURITY_BREACH,
+            "description": "Unknown visitor attempted to enter a restricted area.",
+            "incident_date": "2026-06-10T08:30",
+            "reported_at": "2026-06-10T08:45",
+            "location": "Main gate",
+            "severity_level": Incident.SeverityLevel.HIGH,
+            "reported_by": self.supervisor.pk,
+            "immediate_action_taken": "Visitor stopped and site supervisor notified.",
+            "client_notified": "on",
+            "client_notified_at": "2026-06-10T09:00",
+        }
+
+    def test_supervisor_logs_incident_submitted_to_management(self):
+        form = IncidentForm(data=self.base_data, user=self.supervisor_user)
+
+        self.assertTrue(form.is_valid(), form.errors)
+        incident = form.save()
+
+        self.assertTrue(incident.incident_reference.startswith("INC-202606-"))
+        self.assertEqual(incident.workflow_status, Incident.WorkflowStatus.SUBMITTED)
+        self.assertEqual(incident.status, StatusChoices.PENDING)
+        self.assertEqual(incident.reported_by_user, self.supervisor_user)
+        self.assertEqual(incident.reported_by, self.supervisor)
+        self.assertEqual(incident.site, self.site)
+        self.assertEqual(incident.action_taken, "")
+
+    def test_management_can_record_actions_and_close_incident(self):
+        incident = IncidentForm(data=self.base_data, user=self.supervisor_user)
+        self.assertTrue(incident.is_valid(), incident.errors)
+        record = incident.save()
+
+        form = IncidentForm(
+            data={
+                **self.base_data,
+                "incident_reference": record.incident_reference,
+                "workflow_status": Incident.WorkflowStatus.CLOSED,
+                "assigned_manager": self.manager.pk,
+                "management_action_plan": "Review CCTV and brief all gate guards.",
+                "action_taken": "CCTV reviewed and access control procedure updated.",
+                "root_cause": "Visitor list was not updated.",
+                "corrective_action": "Updated visitor verification procedure.",
+                "preventive_action": "Daily visitor list checks.",
+                "closure_summary": "Incident closed after management review.",
+                "status": StatusChoices.CLOSED,
+            },
+            instance=record,
+            user=self.manager_user,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        updated = form.save()
+
+        self.assertEqual(updated.workflow_status, Incident.WorkflowStatus.CLOSED)
+        self.assertEqual(updated.status, StatusChoices.CLOSED)
+        self.assertEqual(updated.closed_by, self.manager_user)
+        self.assertIsNotNone(updated.closed_at)
+        self.assertEqual(updated.management_reviewed_by, self.manager_user)
+        self.assertEqual(updated.assigned_manager, self.manager)
+
+    def test_management_cannot_close_without_closure_summary(self):
+        form = IncidentForm(
+            data={
+                **self.base_data,
+                "workflow_status": Incident.WorkflowStatus.CLOSED,
+                "management_action_plan": "Review and close.",
+                "action_taken": "Reviewed.",
+            },
+            user=self.manager_user,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("closure_summary", form.errors)
 
 
 class AdminRolePermissionTests(TestCase):

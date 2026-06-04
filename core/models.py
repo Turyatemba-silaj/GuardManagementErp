@@ -951,23 +951,141 @@ class RosterAttendance(TimeStampedModel):
 
 
 class Incident(TimeStampedModel):
+    class SeverityLevel(models.TextChoices):
+        LOW = "low", "Low"
+        MEDIUM = "medium", "Medium"
+        HIGH = "high", "High"
+        CRITICAL = "critical", "Critical"
+
+    class WorkflowStatus(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SUBMITTED = "submitted", "Submitted to Management"
+        UNDER_REVIEW = "under_review", "Under Management Review"
+        ACTION_REQUIRED = "action_required", "Action Required"
+        AWAITING_FOLLOW_UP = "awaiting_follow_up", "Awaiting Follow-up"
+        RESOLVED = "resolved", "Resolved"
+        CLOSED = "closed", "Closed"
+
+    class IncidentCategory(models.TextChoices):
+        SECURITY_BREACH = "security_breach", "Security Breach"
+        THEFT = "theft", "Theft"
+        ASSAULT = "assault", "Assault"
+        FIRE = "fire", "Fire"
+        ACCIDENT = "accident", "Accident"
+        ABSENTEEISM = "absenteeism", "Guard Absenteeism"
+        CLIENT_COMPLAINT = "client_complaint", "Client Complaint"
+        PROPERTY_DAMAGE = "property_damage", "Property Damage"
+        MEDICAL = "medical", "Medical Emergency"
+        OTHER = "other", "Other"
+
     deployment = models.ForeignKey(Deployment, on_delete=models.CASCADE, related_name="incidents")
+    site = models.ForeignKey(Site, on_delete=models.SET_NULL, null=True, blank=True, related_name="incidents")
     employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name="incidents")
+    incident_reference = models.CharField(max_length=40, unique=True, blank=True)
     incident_type = models.CharField(max_length=100)
+    category = models.CharField(max_length=30, choices=IncidentCategory.choices, default=IncidentCategory.OTHER)
     description = models.TextField()
     incident_date = models.DateTimeField()
+    reported_at = models.DateTimeField(default=timezone.now)
     location = models.CharField(max_length=150)
-    severity_level = models.CharField(max_length=50)
+    severity_level = models.CharField(max_length=20, choices=SeverityLevel.choices, default=SeverityLevel.MEDIUM)
     reported_by = models.ForeignKey(
         Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name="reported_incidents"
     )
+    reported_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reported_incidents",
+    )
+    immediate_action_taken = models.TextField(blank=True)
+    witness_names = models.TextField(blank=True)
+    injury_reported = models.BooleanField(default=False)
+    property_damage_reported = models.BooleanField(default=False)
+    estimated_loss_value = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    police_notified = models.BooleanField(default=False)
+    police_reference = models.CharField(max_length=120, blank=True)
+    client_notified = models.BooleanField(default=False)
+    client_notified_at = models.DateTimeField(null=True, blank=True)
+    evidence_file = models.FileField(upload_to="incident_evidence/", blank=True)
+    workflow_status = models.CharField(
+        max_length=30,
+        choices=WorkflowStatus.choices,
+        default=WorkflowStatus.SUBMITTED,
+    )
+    assigned_manager = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_incidents",
+    )
+    management_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_incidents",
+    )
+    management_reviewed_at = models.DateTimeField(null=True, blank=True)
+    management_action_plan = models.TextField(blank=True)
+    action_taken = models.TextField(blank=True)
+    root_cause = models.TextField(blank=True)
+    corrective_action = models.TextField(blank=True)
+    preventive_action = models.TextField(blank=True)
+    follow_up_required = models.BooleanField(default=False)
+    follow_up_due_date = models.DateField(null=True, blank=True)
+    follow_up_notes = models.TextField(blank=True)
+    closure_summary = models.TextField(blank=True)
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="closed_incidents",
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+    management_notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING)
 
     class Meta:
         ordering = ["-incident_date"]
 
     def __str__(self):
-        return f"{self.incident_type} - {self.incident_date:%Y-%m-%d}"
+        reference = self.incident_reference or self.incident_type
+        return f"{reference} - {self.incident_date:%Y-%m-%d}"
+
+    @classmethod
+    def next_reference(cls, incident_date=None):
+        incident_date = incident_date or timezone.now()
+        prefix = f"INC-{incident_date:%Y%m}"
+        existing = cls.objects.filter(incident_reference__startswith=prefix).count() + 1
+        return f"{prefix}-{existing:04d}"
+
+    def clean(self):
+        super().clean()
+        if self.client_notified_at and self.client_notified_at < self.incident_date:
+            raise ValidationError({"client_notified_at": "Client notification cannot be before the incident time."})
+        if self.follow_up_due_date and self.incident_date and self.follow_up_due_date < self.incident_date.date():
+            raise ValidationError({"follow_up_due_date": "Follow-up due date cannot be before the incident date."})
+        validate_non_negative_fields(self, ("estimated_loss_value",))
+        if self.workflow_status == self.WorkflowStatus.CLOSED and not self.closure_summary:
+            raise ValidationError({"closure_summary": "Enter a closure summary before closing the incident."})
+
+    def save(self, *args, **kwargs):
+        if not self.incident_reference:
+            self.incident_reference = self.next_reference(self.incident_date)
+        if not self.site_id and self.deployment_id:
+            self.site = self.deployment.site
+        if self.workflow_status == self.WorkflowStatus.CLOSED:
+            self.status = StatusChoices.CLOSED
+        elif self.workflow_status in {self.WorkflowStatus.RESOLVED}:
+            self.status = StatusChoices.APPROVED
+        elif self.workflow_status in {self.WorkflowStatus.SUBMITTED, self.WorkflowStatus.UNDER_REVIEW, self.WorkflowStatus.ACTION_REQUIRED, self.WorkflowStatus.AWAITING_FOLLOW_UP}:
+            self.status = StatusChoices.PENDING
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class PatrolLog(TimeStampedModel):
