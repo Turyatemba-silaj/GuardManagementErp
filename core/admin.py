@@ -328,10 +328,34 @@ class ShiftAdmin(admin.ModelAdmin):
 
 @admin.register(models.Deployment)
 class DeploymentAdmin(admin.ModelAdmin):
-    list_display = ("employee_number", "employee", "client", "site", "supervisor", "shift", "start_date", "status")
-    list_filter = ("status", "shift", "client", "site")
-    search_fields = ("employee__company_number", "employee__first_name", "employee__last_name", "client__client_name", "site__site_name")
+    list_display = (
+        "deployment_reference",
+        "employee_number",
+        "employee",
+        "client",
+        "site",
+        "duty_post",
+        "site_role",
+        "supervisor",
+        "shift",
+        "deployment_type",
+        "approval_status",
+        "risk_level",
+        "start_date",
+        "status",
+    )
+    list_filter = ("status", "approval_status", "deployment_type", "risk_level", "shift", "client", "site")
+    search_fields = (
+        "deployment_reference",
+        "employee__company_number",
+        "employee__first_name",
+        "employee__last_name",
+        "client__client_name",
+        "site__site_name",
+        "duty_post",
+    )
     date_hierarchy = "start_date"
+    autocomplete_fields = ("employee", "client", "site", "contract", "contract_requirement", "supervisor", "reliever", "approved_by")
 
 
 @admin.register(models.GuardSchedule)

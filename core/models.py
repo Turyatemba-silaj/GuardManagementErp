@@ -770,13 +770,104 @@ class Shift(TimeStampedModel):
 
 
 class Deployment(TimeStampedModel):
+    class DeploymentType(models.TextChoices):
+        PERMANENT = "permanent", "Permanent"
+        TEMPORARY = "temporary", "Temporary"
+        RELIEF = "relief", "Relief"
+        EMERGENCY = "emergency", "Emergency"
+        REPLACEMENT = "replacement", "Replacement"
+        SPECIAL_ASSIGNMENT = "special_assignment", "Special Assignment"
+
+    class SiteRole(models.TextChoices):
+        GUARD = "guard", "Guard"
+        SUPERVISOR = "supervisor", "Supervisor"
+        COMMANDER = "commander", "Commander"
+        DOG_HANDLER = "dog_handler", "Dog Handler"
+        RADIO_OPERATOR = "radio_operator", "Radio Operator"
+        CCTV_OPERATOR = "cctv_operator", "CCTV Operator"
+
+    class ApprovalStatus(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        CANCELLED = "cancelled", "Cancelled"
+
+    class RiskLevel(models.TextChoices):
+        LOW = "low", "Low"
+        MEDIUM = "medium", "Medium"
+        HIGH = "high", "High"
+        CRITICAL = "critical", "Critical"
+
+    class ArmingStatus(models.TextChoices):
+        UNARMED = "unarmed", "Unarmed"
+        ARMED = "armed", "Armed"
+        MIXED = "mixed", "Mixed"
+
     employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name="deployments")
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="deployments")
     site = models.ForeignKey(Site, on_delete=models.PROTECT, related_name="deployments")
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deployments",
+    )
+    contract_requirement = models.ForeignKey(
+        ContractSiteRequirement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deployments",
+    )
     supervisor = models.ForeignKey(
         Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name="supervised_deployments"
     )
     shift = models.ForeignKey(Shift, on_delete=models.PROTECT, related_name="deployments")
+    deployment_reference = models.CharField(max_length=40, unique=True, blank=True)
+    deployment_type = models.CharField(max_length=30, choices=DeploymentType.choices, default=DeploymentType.PERMANENT)
+    duty_post = models.CharField(max_length=120, blank=True)
+    site_role = models.CharField(max_length=30, choices=SiteRole.choices, default=SiteRole.GUARD)
+    deployment_reason = models.CharField(max_length=180, blank=True)
+    reporting_time = models.TimeField(null=True, blank=True)
+    attendance_required = models.BooleanField(default=True)
+    check_in_required = models.BooleanField(default=True)
+    check_out_required = models.BooleanField(default=True)
+    armed_status = models.CharField(max_length=20, choices=ArmingStatus.choices, default=ArmingStatus.UNARMED)
+    risk_level = models.CharField(max_length=20, choices=RiskLevel.choices, default=RiskLevel.MEDIUM)
+    radio_issued = models.BooleanField(default=False)
+    baton_issued = models.BooleanField(default=False)
+    torch_issued = models.BooleanField(default=False)
+    metal_detector_issued = models.BooleanField(default=False)
+    firearm_issued = models.BooleanField(default=False)
+    vehicle_issued = models.BooleanField(default=False)
+    uniform_issued = models.BooleanField(default=False)
+    reliever = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="relief_deployments",
+    )
+    approved_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_deployments",
+    )
+    approval_status = models.CharField(max_length=20, choices=ApprovalStatus.choices, default=ApprovalStatus.PENDING)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    site_contact_person = models.CharField(max_length=150, blank=True)
+    site_contact_phone = models.CharField(max_length=30, blank=True, validators=[phone_number_validator])
+    site_contact_email = models.EmailField(blank=True)
+    emergency_contact_name = models.CharField(max_length=150, blank=True)
+    emergency_contact_phone = models.CharField(max_length=30, blank=True, validators=[phone_number_validator])
+    transport_notes = models.TextField(blank=True)
+    accommodation_notes = models.TextField(blank=True)
+    deployment_instructions = models.TextField(blank=True)
+    handover_notes = models.TextField(blank=True)
+    withdrawal_reason = models.TextField(blank=True)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     status = models.CharField(
@@ -790,13 +881,54 @@ class Deployment(TimeStampedModel):
     def employee_number(self):
         return self.employee.company_number
 
+    @property
+    def deployment_duration_days(self):
+        end_date = self.end_date or timezone.localdate()
+        if not self.start_date:
+            return None
+        return max((end_date - self.start_date).days + 1, 0)
+
+    @property
+    def remaining_days(self):
+        if not self.end_date:
+            return None
+        return max((self.end_date - timezone.localdate()).days, 0)
+
+    @property
+    def active_days(self):
+        if not self.start_date:
+            return 0
+        end_date = min(self.end_date or timezone.localdate(), timezone.localdate())
+        return max((end_date - self.start_date).days + 1, 0)
+
     def __str__(self):
-        return f"{self.employee} at {self.site}"
+        reference = self.deployment_reference or self.employee
+        return f"{reference} at {self.site}"
+
+    @classmethod
+    def next_reference(cls, start_date=None):
+        start_date = start_date or timezone.localdate()
+        if isinstance(start_date, str):
+            start_date = timezone.datetime.fromisoformat(start_date).date()
+        prefix = f"DEP-{start_date:%Y%m}"
+        existing = cls.objects.filter(deployment_reference__startswith=prefix).count() + 1
+        return f"{prefix}-{existing:04d}"
 
     def clean(self):
         super().clean()
         if self.end_date and self.end_date < self.start_date:
             raise ValidationError({"end_date": "Deployment end date cannot be before start date."})
+        if self.site_id and self.client_id and self.site.client_id != self.client_id:
+            raise ValidationError({"site": "Deployment site must belong to the selected client."})
+        if self.contract_id and self.client_id and self.contract.client_id != self.client_id:
+            raise ValidationError({"contract": "Deployment contract must belong to the selected client."})
+        if self.contract_requirement_id:
+            if self.contract_requirement.site_id != self.site_id:
+                raise ValidationError({"contract_requirement": "Contract requirement must match the deployment site."})
+            if self.contract_id and self.contract_requirement.contract_id != self.contract_id:
+                raise ValidationError({"contract_requirement": "Contract requirement must belong to the selected contract."})
+        if self.reliever_id and self.reliever_id == self.employee_id:
+            raise ValidationError({"reliever": "Reliever cannot be the same guard as the deployed employee."})
         if not self.employee_id or not self.site_id or not self.start_date:
             return
         if self.status != StatusChoices.ACTIVE:
@@ -816,6 +948,10 @@ class Deployment(TimeStampedModel):
             )
 
     def save(self, *args, **kwargs):
+        if not self.deployment_reference:
+            self.deployment_reference = self.next_reference(self.start_date)
+        if self.approval_status == self.ApprovalStatus.APPROVED and self.approved_by_id and not self.approved_at:
+            self.approved_at = timezone.now()
         self.full_clean()
         super().save(*args, **kwargs)
 

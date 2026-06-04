@@ -614,6 +614,199 @@ class IncidentForm(SecureModelForm):
         return incident
 
 
+class DeploymentForm(SecureModelForm):
+    class Meta:
+        model = models.Deployment
+        fields = (
+            "employee",
+            "client",
+            "site",
+            "contract",
+            "contract_requirement",
+            "supervisor",
+            "shift",
+            "deployment_reference",
+            "deployment_type",
+            "duty_post",
+            "site_role",
+            "deployment_reason",
+            "reporting_time",
+            "attendance_required",
+            "check_in_required",
+            "check_out_required",
+            "armed_status",
+            "risk_level",
+            "radio_issued",
+            "baton_issued",
+            "torch_issued",
+            "metal_detector_issued",
+            "firearm_issued",
+            "vehicle_issued",
+            "uniform_issued",
+            "reliever",
+            "approved_by",
+            "approval_status",
+            "site_contact_person",
+            "site_contact_phone",
+            "site_contact_email",
+            "emergency_contact_name",
+            "emergency_contact_phone",
+            "transport_notes",
+            "accommodation_notes",
+            "deployment_instructions",
+            "handover_notes",
+            "withdrawal_reason",
+            "start_date",
+            "end_date",
+            "status",
+        )
+        labels = {
+            "deployment_reference": "Deployment Reference",
+            "deployment_type": "Deployment Type",
+            "contract_requirement": "Contract Site Requirement",
+            "duty_post": "Post / Duty Point",
+            "site_role": "Role on Site",
+            "deployment_reason": "Reason for Deployment",
+            "reporting_time": "Reporting Time",
+            "attendance_required": "Attendance Capture Required",
+            "check_in_required": "Check-in Required",
+            "check_out_required": "Check-out Required",
+            "armed_status": "Armed / Unarmed",
+            "risk_level": "Deployment Risk Level",
+            "radio_issued": "Radio Issued",
+            "baton_issued": "Baton Issued",
+            "torch_issued": "Torch Issued",
+            "metal_detector_issued": "Metal Detector Issued",
+            "firearm_issued": "Firearm Issued",
+            "vehicle_issued": "Vehicle Issued",
+            "uniform_issued": "Uniform Issued",
+            "reliever": "Reliever / Replacement Guard",
+            "approved_by": "Deployment Approved By",
+            "approval_status": "Approval Status",
+            "site_contact_person": "Site Contact Person",
+            "site_contact_phone": "Site Contact Phone",
+            "site_contact_email": "Site Contact Email",
+            "emergency_contact_name": "Emergency Contact Name",
+            "emergency_contact_phone": "Emergency Contact Phone",
+            "transport_notes": "Transport Notes",
+            "accommodation_notes": "Accommodation Notes",
+            "deployment_instructions": "Deployment Instructions",
+            "handover_notes": "Handover Notes",
+            "withdrawal_reason": "Termination / Withdrawal Reason",
+        }
+        widgets = {
+            "reporting_time": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "transport_notes": forms.Textarea(attrs={"rows": 3}),
+            "accommodation_notes": forms.Textarea(attrs={"rows": 3}),
+            "deployment_instructions": forms.Textarea(attrs={"rows": 4}),
+            "handover_notes": forms.Textarea(attrs={"rows": 3}),
+            "withdrawal_reason": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+        for field_name in (
+            "attendance_required",
+            "check_in_required",
+            "check_out_required",
+            "radio_issued",
+            "baton_issued",
+            "torch_issued",
+            "metal_detector_issued",
+            "firearm_issued",
+            "vehicle_issued",
+            "uniform_issued",
+        ):
+            self.fields[field_name].widget.attrs.pop("class", None)
+        self.fields["deployment_reference"].required = False
+        self.fields["contract"].required = False
+        self.fields["contract_requirement"].required = False
+        self.fields["supervisor"].required = False
+        self.fields["reliever"].required = False
+        self.fields["approved_by"].required = False
+        self.fields["reporting_time"].required = False
+        self.fields["reporting_time"].input_formats = ["%H:%M", "%H:%M:%S"]
+
+        client = self._selected_client()
+        contract = self._selected_contract()
+        site = self._selected_site()
+        if client:
+            self.fields["site"].queryset = models.Site.objects.filter(client=client).order_by("site_name")
+            self.fields["contract"].queryset = models.Contract.objects.filter(client=client).order_by("-start_date", "contract_number")
+        if contract:
+            requirements = models.ContractSiteRequirement.objects.filter(contract=contract).select_related("site", "shift")
+            if site:
+                requirements = requirements.filter(site=site)
+            self.fields["contract_requirement"].queryset = requirements.order_by("site__site_name", "shift__start_time")
+        else:
+            self.fields["contract_requirement"].queryset = models.ContractSiteRequirement.objects.none()
+        employee_queryset = models.Employee.objects.order_by("first_name", "last_name")
+        self.fields["employee"].queryset = employee_queryset
+        self.fields["supervisor"].queryset = employee_queryset
+        self.fields["reliever"].queryset = employee_queryset
+        self.fields["approved_by"].queryset = employee_queryset
+
+    def _selected_client(self):
+        client_id = self.data.get("client") if self.data else None
+        if client_id:
+            try:
+                return models.Client.objects.get(pk=client_id)
+            except (TypeError, ValueError, models.Client.DoesNotExist):
+                return None
+        if self.instance and self.instance.pk:
+            return self.instance.client
+        return None
+
+    def _selected_contract(self):
+        contract_id = self.data.get("contract") if self.data else None
+        if contract_id:
+            try:
+                return models.Contract.objects.get(pk=contract_id)
+            except (TypeError, ValueError, models.Contract.DoesNotExist):
+                return None
+        if self.instance and self.instance.pk and self.instance.contract_id:
+            return self.instance.contract
+        return None
+
+    def _selected_site(self):
+        site_id = self.data.get("site") if self.data else None
+        if site_id:
+            try:
+                return models.Site.objects.get(pk=site_id)
+            except (TypeError, ValueError, models.Site.DoesNotExist):
+                return None
+        if self.instance and self.instance.pk:
+            return self.instance.site
+        return None
+
+    def clean(self):
+        cleaned_data = super().clean()
+        client = cleaned_data.get("client")
+        site = cleaned_data.get("site")
+        contract = cleaned_data.get("contract")
+        requirement = cleaned_data.get("contract_requirement")
+        reliever = cleaned_data.get("reliever")
+        employee = cleaned_data.get("employee")
+        if client and site and site.client_id != client.id:
+            self.add_error("site", "Deployment site must belong to the selected client.")
+        if client and contract and contract.client_id != client.id:
+            self.add_error("contract", "Deployment contract must belong to the selected client.")
+        if requirement:
+            if site and requirement.site_id != site.id:
+                self.add_error("contract_requirement", "Requirement must match the deployment site.")
+            if contract and requirement.contract_id != contract.id:
+                self.add_error("contract_requirement", "Requirement must belong to the selected contract.")
+            if not contract:
+                cleaned_data["contract"] = requirement.contract
+        if reliever and employee and reliever.id == employee.id:
+            self.add_error("reliever", "Reliever cannot be the same guard as the deployed employee.")
+        return cleaned_data
+
+
 class ContractSiteRequirementForm(SecureModelForm):
     client = forms.ModelChoiceField(
         queryset=models.Client.objects.order_by("client_name"),

@@ -27,7 +27,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.dateparse import parse_date, parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime, parse_time
 from django.views.decorators.csrf import csrf_exempt
 from openpyxl import Workbook, load_workbook
 from reportlab.lib import colors
@@ -40,7 +40,7 @@ from . import models
 from .access import can_access_internal, can_manage_attendance, can_manage_roles, can_manage_slug, has_model_perm, is_manager, is_supervisor
 from .accounting import ensure_default_accounts, post_all_accounting
 from .crud import MODEL_REGISTRY, visible_grouped_registry
-from .forms import ContractForm, ContractSiteRequirementForm, IncidentForm, InvoiceForm, RolePermissionForm, SecureModelForm, UserRoleForm
+from .forms import ContractForm, ContractSiteRequirementForm, DeploymentForm, IncidentForm, InvoiceForm, RolePermissionForm, SecureModelForm, UserRoleForm
 from .security import file_extension, validate_excel_upload, validate_schedule_upload
 
 
@@ -66,6 +66,8 @@ def build_model_form(model):
         return ContractForm
     if model is models.ContractSiteRequirement:
         return ContractSiteRequirementForm
+    if model is models.Deployment:
+        return DeploymentForm
     if model is models.Incident:
         return IncidentForm
     if model is models.Invoice:
@@ -2172,6 +2174,7 @@ def payroll_export_pdf(request):
 
 
 DEPLOYMENT_EXPORT_HEADERS = [
+    "deployment_reference",
     "employee_number",
     "employee_name",
     "client",
@@ -2181,9 +2184,37 @@ DEPLOYMENT_EXPORT_HEADERS = [
     "shift_name",
     "supervisor_number",
     "supervisor_name",
+    "contract_number",
+    "deployment_type",
+    "duty_post",
+    "site_role",
+    "deployment_reason",
+    "reporting_time",
+    "attendance_required",
+    "check_in_required",
+    "check_out_required",
+    "armed_status",
+    "risk_level",
+    "radio_issued",
+    "baton_issued",
+    "torch_issued",
+    "metal_detector_issued",
+    "firearm_issued",
+    "vehicle_issued",
+    "uniform_issued",
+    "reliever_number",
+    "approval_status",
+    "approved_by_number",
+    "site_contact_person",
+    "site_contact_phone",
+    "emergency_contact_name",
+    "emergency_contact_phone",
     "start_date",
     "end_date",
     "status",
+    "deployment_instructions",
+    "handover_notes",
+    "withdrawal_reason",
 ]
 
 
@@ -2204,6 +2235,7 @@ def deployments_export_excel(request):
     for deployment in deployments:
         worksheet.append(
             [
+                deployment.deployment_reference,
                 deployment.employee.company_number,
                 deployment.employee.full_name,
                 deployment.client.client_name,
@@ -2213,9 +2245,37 @@ def deployments_export_excel(request):
                 deployment.shift.shift_name,
                 deployment.supervisor.company_number if deployment.supervisor else "",
                 deployment.supervisor.full_name if deployment.supervisor else "",
+                deployment.contract.contract_number if deployment.contract else "",
+                deployment.deployment_type,
+                deployment.duty_post,
+                deployment.site_role,
+                deployment.deployment_reason,
+                deployment.reporting_time,
+                deployment.attendance_required,
+                deployment.check_in_required,
+                deployment.check_out_required,
+                deployment.armed_status,
+                deployment.risk_level,
+                deployment.radio_issued,
+                deployment.baton_issued,
+                deployment.torch_issued,
+                deployment.metal_detector_issued,
+                deployment.firearm_issued,
+                deployment.vehicle_issued,
+                deployment.uniform_issued,
+                deployment.reliever.company_number if deployment.reliever else "",
+                deployment.approval_status,
+                deployment.approved_by.company_number if deployment.approved_by else "",
+                deployment.site_contact_person,
+                deployment.site_contact_phone,
+                deployment.emergency_contact_name,
+                deployment.emergency_contact_phone,
                 deployment.start_date,
                 deployment.end_date,
                 deployment.status,
+                deployment.deployment_instructions,
+                deployment.handover_notes,
+                deployment.withdrawal_reason,
             ]
         )
     for column_cells in worksheet.columns:
@@ -2267,6 +2327,16 @@ def deployments_import_excel(request):
 
         status_values = {choice.value for choice in models.StatusChoices}
         status_labels = {choice.label.lower(): choice.value for choice in models.StatusChoices}
+        deployment_type_values = {choice.value for choice in models.Deployment.DeploymentType}
+        deployment_type_labels = {choice.label.lower(): choice.value for choice in models.Deployment.DeploymentType}
+        site_role_values = {choice.value for choice in models.Deployment.SiteRole}
+        site_role_labels = {choice.label.lower(): choice.value for choice in models.Deployment.SiteRole}
+        approval_values = {choice.value for choice in models.Deployment.ApprovalStatus}
+        approval_labels = {choice.label.lower(): choice.value for choice in models.Deployment.ApprovalStatus}
+        risk_values = {choice.value for choice in models.Deployment.RiskLevel}
+        risk_labels = {choice.label.lower(): choice.value for choice in models.Deployment.RiskLevel}
+        armed_values = {choice.value for choice in models.Deployment.ArmingStatus}
+        armed_labels = {choice.label.lower(): choice.value for choice in models.Deployment.ArmingStatus}
         created_count = 0
         updated_count = 0
         skipped_rows = []
@@ -2278,9 +2348,18 @@ def deployments_import_excel(request):
             site_value = value_from_row(row, headers, "site_code", "site", "site_name")
             shift_value = value_from_row(row, headers, "shift_code", "shift", "shift_name")
             supervisor_value = value_from_row(row, headers, "supervisor_number", "supervisor_company_number")
+            reliever_value = value_from_row(row, headers, "reliever_number", "reliever_company_number")
+            approved_by_value = value_from_row(row, headers, "approved_by_number", "approved_by_company_number")
+            contract_value = value_from_row(row, headers, "contract_number", "contract")
             status_value = value_from_row(row, headers, "status").lower()
+            deployment_type_value = value_from_row(row, headers, "deployment_type").lower()
+            site_role_value = value_from_row(row, headers, "site_role", "role_on_site").lower()
+            approval_value = value_from_row(row, headers, "approval_status").lower()
+            risk_value = value_from_row(row, headers, "risk_level").lower()
+            armed_value = value_from_row(row, headers, "armed_status", "armed_unarmed").lower()
             start_date = date_from_row(row, headers, "start_date", "deployment_date")
             end_date = date_from_row(row, headers, "end_date")
+            reporting_time = time_from_row(row, headers, "reporting_time")
 
             employee = models.Employee.objects.filter(
                 Q(company_number__iexact=employee_value)
@@ -2303,9 +2382,59 @@ def deployments_import_excel(request):
                 if not supervisor:
                     skipped_rows.append(f"Row {row_number}: supervisor not found")
                     continue
+            reliever = None
+            if reliever_value:
+                reliever = models.Employee.objects.filter(
+                    Q(company_number__iexact=reliever_value)
+                    | Q(national_id__iexact=reliever_value)
+                    | Q(first_name__iexact=reliever_value)
+                    | Q(last_name__iexact=reliever_value)
+                ).first()
+                if not reliever:
+                    skipped_rows.append(f"Row {row_number}: reliever not found")
+                    continue
+            approved_by = None
+            if approved_by_value:
+                approved_by = models.Employee.objects.filter(
+                    Q(company_number__iexact=approved_by_value)
+                    | Q(national_id__iexact=approved_by_value)
+                    | Q(first_name__iexact=approved_by_value)
+                    | Q(last_name__iexact=approved_by_value)
+                ).first()
+                if not approved_by:
+                    skipped_rows.append(f"Row {row_number}: approver not found")
+                    continue
+            contract = None
+            if contract_value:
+                contract = models.Contract.objects.filter(
+                    Q(contract_number__iexact=contract_value) | Q(contract_title__iexact=contract_value),
+                    client=site.client if site else None,
+                ).first()
+                if not contract:
+                    skipped_rows.append(f"Row {row_number}: contract not found")
+                    continue
             status = status_labels.get(status_value, status_value or models.StatusChoices.ACTIVE)
             if status not in status_values:
                 skipped_rows.append(f"Row {row_number}: invalid status")
+                continue
+            deployment_type = deployment_type_labels.get(deployment_type_value, deployment_type_value or models.Deployment.DeploymentType.PERMANENT)
+            site_role = site_role_labels.get(site_role_value, site_role_value or models.Deployment.SiteRole.GUARD)
+            approval_status = approval_labels.get(approval_value, approval_value or models.Deployment.ApprovalStatus.PENDING)
+            risk_level = risk_labels.get(risk_value, risk_value or models.Deployment.RiskLevel.MEDIUM)
+            armed_status = armed_labels.get(armed_value, armed_value or models.Deployment.ArmingStatus.UNARMED)
+            invalid_choices = []
+            if deployment_type not in deployment_type_values:
+                invalid_choices.append("deployment type")
+            if site_role not in site_role_values:
+                invalid_choices.append("site role")
+            if approval_status not in approval_values:
+                invalid_choices.append("approval status")
+            if risk_level not in risk_values:
+                invalid_choices.append("risk level")
+            if armed_status not in armed_values:
+                invalid_choices.append("armed status")
+            if invalid_choices:
+                skipped_rows.append(f"Row {row_number}: invalid {', '.join(invalid_choices)}")
                 continue
             if not employee or not site or not shift or not start_date:
                 skipped_rows.append(
@@ -2324,9 +2453,37 @@ def deployments_import_excel(request):
                 start_date=start_date,
                 defaults={
                     "client": site.client,
+                    "contract": contract,
                     "supervisor": supervisor,
+                    "deployment_type": deployment_type,
+                    "duty_post": value_from_row(row, headers, "duty_post", "post", "duty_point"),
+                    "site_role": site_role,
+                    "deployment_reason": value_from_row(row, headers, "deployment_reason", "reason"),
+                    "reporting_time": reporting_time,
+                    "attendance_required": bool_from_row(row, headers, "attendance_required", default=True),
+                    "check_in_required": bool_from_row(row, headers, "check_in_required", default=True),
+                    "check_out_required": bool_from_row(row, headers, "check_out_required", default=True),
+                    "armed_status": armed_status,
+                    "risk_level": risk_level,
+                    "radio_issued": bool_from_row(row, headers, "radio_issued"),
+                    "baton_issued": bool_from_row(row, headers, "baton_issued"),
+                    "torch_issued": bool_from_row(row, headers, "torch_issued"),
+                    "metal_detector_issued": bool_from_row(row, headers, "metal_detector_issued"),
+                    "firearm_issued": bool_from_row(row, headers, "firearm_issued"),
+                    "vehicle_issued": bool_from_row(row, headers, "vehicle_issued"),
+                    "uniform_issued": bool_from_row(row, headers, "uniform_issued"),
+                    "reliever": reliever,
+                    "approval_status": approval_status,
+                    "approved_by": approved_by,
+                    "site_contact_person": value_from_row(row, headers, "site_contact_person"),
+                    "site_contact_phone": value_from_row(row, headers, "site_contact_phone"),
+                    "emergency_contact_name": value_from_row(row, headers, "emergency_contact_name"),
+                    "emergency_contact_phone": value_from_row(row, headers, "emergency_contact_phone"),
                     "end_date": end_date,
                     "status": status,
+                    "deployment_instructions": value_from_row(row, headers, "deployment_instructions", "instructions"),
+                    "handover_notes": value_from_row(row, headers, "handover_notes"),
+                    "withdrawal_reason": value_from_row(row, headers, "withdrawal_reason"),
                 },
             )
             if created:
@@ -3250,6 +3407,30 @@ def date_from_row(row, headers, *names):
             if parsed:
                 return parsed
     return None
+
+
+def time_from_row(row, headers, *names):
+    for name in names:
+        index = headers.get(name)
+        if index is not None:
+            if index >= len(row):
+                continue
+            value = row[index]
+            if value in (None, ""):
+                continue
+            if hasattr(value, "time"):
+                return value.time()
+            parsed = parse_time(str(value).strip())
+            if parsed:
+                return parsed
+    return None
+
+
+def bool_from_row(row, headers, *names, default=False):
+    value = value_from_row(row, headers, *names).lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "y", "on", "issued", "required"}
 
 
 def month_date_range(roster_month):

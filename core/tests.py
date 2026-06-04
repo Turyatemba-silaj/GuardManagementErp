@@ -59,7 +59,7 @@ from .models import (
 from .accounting import ensure_default_accounts, post_all_accounting, post_invoice, post_salary
 from .crud import MODEL_REGISTRY
 from .db_runtime import ensure_writable_sqlite_database
-from .forms import ContractForm, ContractSiteRequirementForm, IncidentForm, InvoiceForm
+from .forms import ContractForm, ContractSiteRequirementForm, DeploymentForm, IncidentForm, InvoiceForm
 import security_management.settings as project_settings
 
 
@@ -1606,7 +1606,7 @@ class GuardSchedulingTests(TestCase):
             start_date="2026-01-01",
             status=StatusChoices.ACTIVE,
         )
-        ContractSiteRequirement.objects.create(
+        self.contract_requirement = ContractSiteRequirement.objects.create(
             contract=self.contract,
             site=self.site,
             required_guards=10,
@@ -1729,21 +1729,54 @@ class GuardSchedulingTests(TestCase):
         workbook = load_workbook(BytesIO(response.content))
         worksheet = workbook.active
         headers = [cell.value for cell in worksheet[1]]
-        self.assertEqual(headers[:4], ["employee_number", "employee_name", "client", "site_code"])
-        self.assertEqual(worksheet["A2"].value, self.guard.company_number)
+        self.assertEqual(headers[:5], ["deployment_reference", "employee_number", "employee_name", "client", "site_code"])
+        self.assertIn("duty_post", headers)
+        self.assertIn("approval_status", headers)
+        self.assertEqual(worksheet["B2"].value, self.guard.company_number)
 
     def test_deployment_excel_import_updates_deployment(self):
         workbook = Workbook()
         worksheet = workbook.active
-        worksheet.append(["employee_number", "site_code", "shift_code", "start_date", "end_date", "status"])
+        worksheet.append(
+            [
+                "employee_number",
+                "site_code",
+                "shift_code",
+                "contract_number",
+                "deployment_type",
+                "duty_post",
+                "site_role",
+                "reporting_time",
+                "attendance_required",
+                "armed_status",
+                "risk_level",
+                "radio_issued",
+                "approval_status",
+                "start_date",
+                "end_date",
+                "status",
+                "deployment_instructions",
+            ]
+        )
         worksheet.append(
             [
                 self.guard.company_number,
                 self.site.site_code,
                 self.shift.code,
+                self.contract.contract_number,
+                "temporary",
+                "Main Gate",
+                "guard",
+                "07:45",
+                "yes",
+                "unarmed",
+                "high",
+                "yes",
+                "approved",
                 "2026-05-01",
                 "2026-05-31",
                 "inactive",
+                "Report before shift and verify visitor list.",
             ]
         )
         buffer = BytesIO()
@@ -1761,7 +1794,90 @@ class GuardSchedulingTests(TestCase):
         self.deployment.refresh_from_db()
         self.assertEqual(self.deployment.end_date.isoformat(), "2026-05-31")
         self.assertEqual(self.deployment.status, StatusChoices.INACTIVE)
+        self.assertEqual(self.deployment.contract, self.contract)
+        self.assertEqual(self.deployment.deployment_type, Deployment.DeploymentType.TEMPORARY)
+        self.assertEqual(self.deployment.duty_post, "Main Gate")
+        self.assertEqual(self.deployment.risk_level, Deployment.RiskLevel.HIGH)
+        self.assertTrue(self.deployment.radio_issued)
+        self.assertEqual(self.deployment.approval_status, Deployment.ApprovalStatus.APPROVED)
         self.assertEqual(Deployment.objects.count(), 1)
+
+    def test_deployment_form_saves_standard_fields_and_reference(self):
+        form = DeploymentForm(
+            data={
+                "employee": self.replacement_guard.pk,
+                "client": self.client_record.pk,
+                "site": self.site.pk,
+                "contract": self.contract.pk,
+                "contract_requirement": self.contract_requirement.pk,
+                "supervisor": self.supervisor.pk,
+                "shift": self.shift.pk,
+                "deployment_type": Deployment.DeploymentType.RELIEF,
+                "duty_post": "Reception",
+                "site_role": Deployment.SiteRole.GUARD,
+                "deployment_reason": "Relief coverage",
+                "reporting_time": "07:45",
+                "attendance_required": "on",
+                "check_in_required": "on",
+                "check_out_required": "on",
+                "armed_status": Deployment.ArmingStatus.UNARMED,
+                "risk_level": Deployment.RiskLevel.MEDIUM,
+                "radio_issued": "on",
+                "torch_issued": "on",
+                "uniform_issued": "on",
+                "approval_status": Deployment.ApprovalStatus.APPROVED,
+                "approved_by": self.supervisor.pk,
+                "site_contact_person": "Sarah",
+                "site_contact_phone": "0700000001",
+                "emergency_contact_name": "Control Room",
+                "emergency_contact_phone": "0700000999",
+                "deployment_instructions": "Screen all visitors and log deliveries.",
+                "handover_notes": "Check radio battery at shift start.",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-30",
+                "status": StatusChoices.ACTIVE,
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        deployment = form.save()
+
+        self.assertTrue(deployment.deployment_reference.startswith("DEP-202606-"))
+        self.assertEqual(deployment.contract, self.contract)
+        self.assertEqual(deployment.contract_requirement, self.contract_requirement)
+        self.assertEqual(deployment.duty_post, "Reception")
+        self.assertTrue(deployment.radio_issued)
+        self.assertIsNotNone(deployment.approved_at)
+        self.assertEqual(deployment.deployment_duration_days, 30)
+
+    def test_deployment_form_rejects_wrong_client_site_and_same_reliever(self):
+        other_client = Client.objects.create(
+            client_name="Other Deployment Client",
+            contact_person="Jane",
+            phone_number="0700000777",
+            contract_start_date="2026-01-01",
+        )
+        other_site = Site.objects.create(
+            client=other_client,
+            site_name="Other Site",
+            site_address="Plot 77",
+            city="Kampala",
+        )
+        form = DeploymentForm(
+            data={
+                "employee": self.replacement_guard.pk,
+                "client": self.client_record.pk,
+                "site": other_site.pk,
+                "shift": self.shift.pk,
+                "reliever": self.replacement_guard.pk,
+                "start_date": "2026-06-01",
+                "status": StatusChoices.ACTIVE,
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("site", form.errors)
+        self.assertIn("reliever", form.errors)
 
     def test_iot_swipe_rejects_attendance_outside_geofence(self):
         GuardSchedule.objects.create(

@@ -231,6 +231,57 @@
     }
 </style>
 {% endif %}
+{% if slug == "deployments" %}
+<style>
+    .deployment-form {
+        grid-template-columns: 1fr;
+    }
+    .deployment-section {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        padding: 16px;
+        border: 1px solid var(--sentinel-line);
+        border-radius: 8px;
+        background: #fff;
+    }
+    .deployment-section h2 {
+        grid-column: 1 / -1;
+        font-size: 15px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--sentinel-line);
+    }
+    .deployment-section .field-wide {
+        grid-column: 1 / -1;
+    }
+    .deployment-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .deployment-metric {
+        display: grid;
+        gap: 6px;
+    }
+    .deployment-metric span {
+        color: var(--sentinel-muted);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+    .deployment-metric strong {
+        color: var(--sentinel-ink);
+        font-size: 16px;
+    }
+    @media (max-width: 720px) {
+        .deployment-summary,
+        .deployment-section {
+            grid-template-columns: 1fr;
+        }
+        .deployment-section .field-wide {
+            grid-column: auto;
+        }
+    }
+</style>
+{% endif %}
 {% if slug == "contract-site-requirements" %}
 <style>
     .contract-requirement-form {
@@ -311,7 +362,7 @@
             <a class="btn btn-light" href="{% url 'core:record_list' slug %}">Back to {{ config.title }}</a>
         {% endif %}
     </div>
-    <form id="record-form" class="form-card {% if slug == 'employees' %}employee-form-card{% endif %}{% if slug == 'contracts' %} contract-form{% endif %}{% if slug == 'incidents' %} incident-form{% endif %}{% if slug == 'contract-site-requirements' %} contract-requirement-form{% endif %}" method="post" enctype="multipart/form-data">
+    <form id="record-form" class="form-card {% if slug == 'employees' %}employee-form-card{% endif %}{% if slug == 'contracts' %} contract-form{% endif %}{% if slug == 'incidents' %} incident-form{% endif %}{% if slug == 'deployments' %} deployment-form{% endif %}{% if slug == 'contract-site-requirements' %} contract-requirement-form{% endif %}" method="post" enctype="multipart/form-data">
         {% csrf_token %}
         {% if slug == "contracts" %}
             {{ form.non_field_errors }}
@@ -431,6 +482,87 @@
                 <div class="field">{{ form.governing_law.label_tag }}{{ form.governing_law }}{{ form.governing_law.errors }}</div>
                 <div class="field field-wide">{{ form.special_conditions.label_tag }}{{ form.special_conditions }}{{ form.special_conditions.errors }}</div>
                 <div class="field field-wide">{{ form.terms.label_tag }}{{ form.terms }}{{ form.terms.errors }}</div>
+            </section>
+        {% elif slug == "deployments" %}
+            {{ form.non_field_errors }}
+            {% if record %}
+                <section class="deployment-section deployment-summary">
+                    <h2>Deployment Status</h2>
+                    <div class="deployment-metric">
+                        <span>Deployment Duration</span>
+                        <strong>{% if record.deployment_duration_days != None %}{{ record.deployment_duration_days }} days{% else %}-{% endif %}</strong>
+                    </div>
+                    <div class="deployment-metric">
+                        <span>Active Days</span>
+                        <strong>{{ record.active_days }} days</strong>
+                    </div>
+                    <div class="deployment-metric">
+                        <span>Remaining Days</span>
+                        <strong>{% if record.remaining_days != None %}{{ record.remaining_days }} days{% else %}Open ended{% endif %}</strong>
+                    </div>
+                </section>
+            {% endif %}
+            <section class="deployment-section">
+                <h2>Section 1: Guard Information</h2>
+                <div class="field">{{ form.employee.label_tag }}{{ form.employee }}{{ form.employee.errors }}</div>
+                <div class="field">{{ form.reliever.label_tag }}{{ form.reliever }}{{ form.reliever.errors }}</div>
+                <div class="field">{{ form.supervisor.label_tag }}{{ form.supervisor }}{{ form.supervisor.errors }}</div>
+                <div class="field">{{ form.site_role.label_tag }}{{ form.site_role }}{{ form.site_role.errors }}</div>
+            </section>
+            <section class="deployment-section">
+                <h2>Section 2: Client and Site</h2>
+                <div class="field">{{ form.client.label_tag }}{{ form.client }}{{ form.client.errors }}</div>
+                <div class="field">{{ form.site.label_tag }}{{ form.site }}{{ form.site.errors }}</div>
+                <div class="field">{{ form.contract.label_tag }}{{ form.contract }}{{ form.contract.errors }}</div>
+                <div class="field">{{ form.contract_requirement.label_tag }}{{ form.contract_requirement }}{{ form.contract_requirement.errors }}</div>
+                <div class="field">{{ form.site_contact_person.label_tag }}{{ form.site_contact_person }}{{ form.site_contact_person.errors }}</div>
+                <div class="field">{{ form.site_contact_phone.label_tag }}{{ form.site_contact_phone }}{{ form.site_contact_phone.errors }}</div>
+                <div class="field">{{ form.site_contact_email.label_tag }}{{ form.site_contact_email }}{{ form.site_contact_email.errors }}</div>
+                <div class="field">{{ form.emergency_contact_name.label_tag }}{{ form.emergency_contact_name }}{{ form.emergency_contact_name.errors }}</div>
+                <div class="field">{{ form.emergency_contact_phone.label_tag }}{{ form.emergency_contact_phone }}{{ form.emergency_contact_phone.errors }}</div>
+            </section>
+            <section class="deployment-section">
+                <h2>Section 3: Shift and Duty Assignment</h2>
+                <div class="field">{{ form.deployment_reference.label_tag }}{{ form.deployment_reference }}{{ form.deployment_reference.errors }}</div>
+                <div class="field">{{ form.deployment_type.label_tag }}{{ form.deployment_type }}{{ form.deployment_type.errors }}</div>
+                <div class="field">{{ form.shift.label_tag }}{{ form.shift }}{{ form.shift.errors }}</div>
+                <div class="field">{{ form.reporting_time.label_tag }}{{ form.reporting_time }}{{ form.reporting_time.errors }}</div>
+                <div class="field">{{ form.duty_post.label_tag }}{{ form.duty_post }}{{ form.duty_post.errors }}</div>
+                <div class="field">{{ form.deployment_reason.label_tag }}{{ form.deployment_reason }}{{ form.deployment_reason.errors }}</div>
+                <div class="field check-field"><label>{{ form.attendance_required }} <span>{{ form.attendance_required.label }}</span></label>{{ form.attendance_required.errors }}</div>
+                <div class="field check-field"><label>{{ form.check_in_required }} <span>{{ form.check_in_required.label }}</span></label>{{ form.check_in_required.errors }}</div>
+                <div class="field check-field"><label>{{ form.check_out_required }} <span>{{ form.check_out_required.label }}</span></label>{{ form.check_out_required.errors }}</div>
+            </section>
+            <section class="deployment-section">
+                <h2>Section 4: Equipment and Risk</h2>
+                <div class="field">{{ form.armed_status.label_tag }}{{ form.armed_status }}{{ form.armed_status.errors }}</div>
+                <div class="field">{{ form.risk_level.label_tag }}{{ form.risk_level }}{{ form.risk_level.errors }}</div>
+                <div class="field check-field"><label>{{ form.radio_issued }} <span>{{ form.radio_issued.label }}</span></label>{{ form.radio_issued.errors }}</div>
+                <div class="field check-field"><label>{{ form.baton_issued }} <span>{{ form.baton_issued.label }}</span></label>{{ form.baton_issued.errors }}</div>
+                <div class="field check-field"><label>{{ form.torch_issued }} <span>{{ form.torch_issued.label }}</span></label>{{ form.torch_issued.errors }}</div>
+                <div class="field check-field"><label>{{ form.metal_detector_issued }} <span>{{ form.metal_detector_issued.label }}</span></label>{{ form.metal_detector_issued.errors }}</div>
+                <div class="field check-field"><label>{{ form.firearm_issued }} <span>{{ form.firearm_issued.label }}</span></label>{{ form.firearm_issued.errors }}</div>
+                <div class="field check-field"><label>{{ form.vehicle_issued }} <span>{{ form.vehicle_issued.label }}</span></label>{{ form.vehicle_issued.errors }}</div>
+                <div class="field check-field"><label>{{ form.uniform_issued }} <span>{{ form.uniform_issued.label }}</span></label>{{ form.uniform_issued.errors }}</div>
+            </section>
+            <section class="deployment-section">
+                <h2>Section 5: Approval and Management</h2>
+                <div class="field">{{ form.approved_by.label_tag }}{{ form.approved_by }}{{ form.approved_by.errors }}</div>
+                <div class="field">{{ form.approval_status.label_tag }}{{ form.approval_status }}{{ form.approval_status.errors }}</div>
+            </section>
+            <section class="deployment-section">
+                <h2>Section 6: Handover and Instructions</h2>
+                <div class="field field-wide">{{ form.deployment_instructions.label_tag }}{{ form.deployment_instructions }}{{ form.deployment_instructions.errors }}</div>
+                <div class="field field-wide">{{ form.handover_notes.label_tag }}{{ form.handover_notes }}{{ form.handover_notes.errors }}</div>
+                <div class="field field-wide">{{ form.transport_notes.label_tag }}{{ form.transport_notes }}{{ form.transport_notes.errors }}</div>
+                <div class="field field-wide">{{ form.accommodation_notes.label_tag }}{{ form.accommodation_notes }}{{ form.accommodation_notes.errors }}</div>
+            </section>
+            <section class="deployment-section">
+                <h2>Section 7: Deployment Status</h2>
+                <div class="field">{{ form.start_date.label_tag }}{{ form.start_date }}{{ form.start_date.errors }}</div>
+                <div class="field">{{ form.end_date.label_tag }}{{ form.end_date }}{{ form.end_date.errors }}</div>
+                <div class="field">{{ form.status.label_tag }}{{ form.status }}{{ form.status.errors }}</div>
+                <div class="field field-wide">{{ form.withdrawal_reason.label_tag }}{{ form.withdrawal_reason }}{{ form.withdrawal_reason.errors }}</div>
             </section>
         {% elif slug == "incidents" %}
             {{ form.non_field_errors }}
