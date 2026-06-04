@@ -252,6 +252,12 @@ class Site(TimeStampedModel):
 
 
 class Contract(TimeStampedModel):
+    class ContractType(models.TextChoices):
+        FIXED_TERM = "fixed_term", "Fixed Term"
+        RENEWABLE = "renewable", "Renewable"
+        FRAMEWORK = "framework", "Framework Contract"
+        ONE_TIME = "one_time", "One-Time Service"
+
     class ServiceType(models.TextChoices):
         MANNED_GUARDING = "Manned Guarding", "Manned Guarding"
         SITE_SUPERVISION = "Site Supervision", "Site Supervision"
@@ -262,12 +268,57 @@ class Contract(TimeStampedModel):
     class BillingCycle(models.TextChoices):
         MONTHLY = "monthly", "Monthly"
         QUARTERLY = "quarterly", "Quarterly"
+        SEMI_ANNUAL = "semi_annual", "Semi-Annual"
         ANNUALLY = "annually", "Annually"
         ONE_TIME = "one_time", "One Time"
 
+    class PaymentTerm(models.TextChoices):
+        NET_30 = "net_30", "Net 30 Days"
+        NET_60 = "net_60", "Net 60 Days"
+        ADVANCE = "advance", "Advance Payment"
+        CUSTOM = "custom", "Custom"
+
+    class ShiftPattern(models.TextChoices):
+        EIGHT_HOURS = "8_hours", "8 Hours"
+        TWELVE_HOURS = "12_hours", "12 Hours"
+        TWENTY_FOUR_HOURS = "24_hours", "24 Hours"
+        CUSTOM = "custom", "Custom"
+
+    class ArmingStatus(models.TextChoices):
+        UNARMED = "unarmed", "Unarmed"
+        ARMED = "armed", "Armed"
+        MIXED = "mixed", "Mixed"
+
+    class UniformRequirement(models.TextChoices):
+        COMPANY = "company", "Company Uniform"
+        CLIENT = "client", "Client Uniform"
+        BOTH = "both", "Client and Company Uniform"
+        CUSTOM = "custom", "Custom"
+
+    class Currency(models.TextChoices):
+        UGX = "UGX", "UGX"
+        USD = "USD", "USD"
+        KES = "KES", "KES"
+        TZS = "TZS", "TZS"
+
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="contracts")
+    deployment_site = models.ForeignKey(
+        Site,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contracts",
+    )
+    contract_manager = models.ForeignKey(
+        "Employee",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_contracts",
+    )
     contract_number = models.CharField(max_length=80, unique=True)
     contract_title = models.CharField(max_length=180, blank=True)
+    contract_type = models.CharField(max_length=20, choices=ContractType.choices, default=ContractType.FIXED_TERM)
     service_type = models.CharField(
         max_length=120,
         choices=ServiceType.choices,
@@ -276,6 +327,7 @@ class Contract(TimeStampedModel):
     client_representative = models.CharField(max_length=150, blank=True)
     client_representative_title = models.CharField(max_length=120, blank=True)
     client_representative_email = models.EmailField(blank=True)
+    client_representative_phone = models.CharField(max_length=30, blank=True, validators=[phone_number_validator])
     company_representative = models.CharField(max_length=150, blank=True)
     company_representative_title = models.CharField(max_length=120, blank=True)
     signed_date = models.DateField(null=True, blank=True)
@@ -283,25 +335,54 @@ class Contract(TimeStampedModel):
     end_date = models.DateField(null=True, blank=True)
     billing_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     contract_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    currency = models.CharField(max_length=3, default="UGX")
+    monthly_contract_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    annual_contract_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    currency = models.CharField(max_length=3, choices=Currency.choices, default=Currency.UGX)
     billing_cycle = models.CharField(max_length=20, choices=BillingCycle.choices, default=BillingCycle.MONTHLY)
+    payment_terms = models.CharField(max_length=20, choices=PaymentTerm.choices, default=PaymentTerm.NET_30)
     payment_terms_days = models.PositiveIntegerField(default=30)
     payment_instructions = models.TextField(blank=True)
+    vat_applicable = models.BooleanField(default=True)
+    vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.18"))
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.ACTIVE)
     service_scope = models.TextField(blank=True)
     service_location = models.CharField(max_length=180, blank=True)
     service_hours = models.CharField(max_length=120, blank=True)
     response_time_sla = models.CharField("Response time SLA", max_length=120, blank=True)
+    incident_escalation_time = models.CharField(max_length=120, blank=True)
+    patrol_frequency = models.CharField(max_length=120, blank=True)
     supervision_frequency = models.CharField(max_length=120, blank=True)
     guard_training_requirements = models.TextField(blank=True)
+    day_guards_required = models.PositiveIntegerField(default=0)
+    night_guards_required = models.PositiveIntegerField(default=0)
+    supervisors_required = models.PositiveIntegerField(default=0)
+    shift_pattern = models.CharField(max_length=20, choices=ShiftPattern.choices, blank=True)
+    arming_status = models.CharField(max_length=20, choices=ArmingStatus.choices, default=ArmingStatus.UNARMED)
+    patrol_required = models.BooleanField(default=False)
+    radio_required = models.BooleanField(default=False)
+    torch_required = models.BooleanField(default=False)
+    metal_detector_required = models.BooleanField(default=False)
+    vehicle_required = models.BooleanField(default=False)
+    uniform_requirement = models.CharField(
+        max_length=20,
+        choices=UniformRequirement.choices,
+        default=UniformRequirement.COMPANY,
+    )
     client_obligations = models.TextField(blank=True)
     company_obligations = models.TextField(blank=True)
     confidentiality_clause = models.TextField(blank=True)
     liability_limit = models.CharField(max_length=180, blank=True)
     termination_notice_days = models.PositiveIntegerField(default=30)
+    renewal_date = models.DateField(null=True, blank=True)
+    renewal_reminder_days = models.PositiveIntegerField(default=60)
     renewal_terms = models.TextField(blank=True)
     governing_law = models.CharField(max_length=120, blank=True, default="Uganda")
     special_conditions = models.TextField(blank=True)
+    late_payment_penalty = models.CharField(max_length=180, blank=True)
+    service_breach_penalty = models.CharField(max_length=180, blank=True)
+    signed_contract = models.FileField(upload_to="contract_documents/signed/", blank=True)
+    amendment_document = models.FileField(upload_to="contract_documents/amendments/", blank=True)
+    renewal_document = models.FileField(upload_to="contract_documents/renewals/", blank=True)
     dog_count = models.PositiveIntegerField(default=0)
     dog_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     metal_detector_count = models.PositiveIntegerField(default=0)
@@ -329,6 +410,9 @@ class Contract(TimeStampedModel):
             (
                 "billing_rate",
                 "contract_value",
+                "monthly_contract_value",
+                "annual_contract_value",
+                "vat_rate",
                 "dog_rate",
                 "metal_detector_rate",
                 "walk_through_detector_rate",
@@ -339,10 +423,52 @@ class Contract(TimeStampedModel):
 
     @property
     def required_guards(self):
+        configured_total = self.day_guards_required + self.night_guards_required + self.supervisors_required
+        if configured_total:
+            return configured_total
         return sum(
             requirement.required_guards
             for requirement in self.site_requirements.filter(status=StatusChoices.ACTIVE)
         )
+
+    @property
+    def contract_duration_days(self):
+        if not self.start_date or not self.end_date:
+            return None
+        return max((self.end_date - self.start_date).days + 1, 0)
+
+    @property
+    def contract_duration_months(self):
+        duration_days = self.contract_duration_days
+        if duration_days is None:
+            return None
+        return round(duration_days / 30.4375, 1)
+
+    @property
+    def remaining_days(self):
+        if not self.end_date:
+            return None
+        return max((self.end_date - timezone.localdate()).days, 0)
+
+    @property
+    def progress_percent(self):
+        duration_days = self.contract_duration_days
+        if not duration_days:
+            return 0
+        elapsed_days = (timezone.localdate() - self.start_date).days
+        return min(max(round((elapsed_days / duration_days) * 100), 0), 100)
+
+    @property
+    def vat_amount(self):
+        if not self.vat_applicable:
+            return Decimal("0.00")
+        base_amount = self.contract_value or self.annual_contract_value or self.monthly_contract_value
+        return (base_amount * self.vat_rate).quantize(Decimal("0.01"))
+
+    @property
+    def total_contract_value_with_vat(self):
+        base_amount = self.contract_value or self.annual_contract_value or self.monthly_contract_value
+        return (base_amount + self.vat_amount).quantize(Decimal("0.01"))
 
     @property
     def other_deliverables(self):

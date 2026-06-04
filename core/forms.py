@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
@@ -109,12 +111,23 @@ class UserRoleForm(forms.ModelForm):
 
 class ContractForm(SecureModelForm):
     DEFAULTED_FIELDS = (
+        "contract_type",
         "contract_value",
+        "monthly_contract_value",
+        "annual_contract_value",
         "currency",
         "billing_cycle",
+        "payment_terms",
         "payment_terms_days",
+        "vat_rate",
         "termination_notice_days",
+        "renewal_reminder_days",
         "governing_law",
+        "uniform_requirement",
+        "arming_status",
+        "day_guards_required",
+        "night_guards_required",
+        "supervisors_required",
     )
     DELIVERABLE_FIELDS = (
         "dog_count",
@@ -133,30 +146,54 @@ class ContractForm(SecureModelForm):
         model = models.Contract
         fields = (
             "client",
+            "deployment_site",
             "contract_number",
             "contract_title",
+            "contract_type",
             "service_type",
+            "contract_manager",
             "client_representative",
             "client_representative_title",
+            "client_representative_phone",
             "client_representative_email",
             "company_representative",
             "company_representative_title",
             "signed_date",
             "start_date",
             "end_date",
+            "renewal_date",
+            "renewal_reminder_days",
             "billing_rate",
+            "monthly_contract_value",
+            "annual_contract_value",
             "contract_value",
             "currency",
             "billing_cycle",
+            "payment_terms",
             "payment_terms_days",
             "payment_instructions",
+            "vat_applicable",
+            "vat_rate",
             "status",
             "service_scope",
             "service_location",
             "service_hours",
             "response_time_sla",
+            "incident_escalation_time",
+            "patrol_frequency",
             "supervision_frequency",
             "guard_training_requirements",
+            "day_guards_required",
+            "night_guards_required",
+            "supervisors_required",
+            "shift_pattern",
+            "arming_status",
+            "patrol_required",
+            "radio_required",
+            "torch_required",
+            "metal_detector_required",
+            "vehicle_required",
+            "uniform_requirement",
             "client_obligations",
             "company_obligations",
             "confidentiality_clause",
@@ -165,6 +202,11 @@ class ContractForm(SecureModelForm):
             "renewal_terms",
             "governing_law",
             "special_conditions",
+            "late_payment_penalty",
+            "service_breach_penalty",
+            "signed_contract",
+            "amendment_document",
+            "renewal_document",
             "dog_count",
             "dog_rate",
             "metal_detector_count",
@@ -178,24 +220,48 @@ class ContractForm(SecureModelForm):
             "terms",
         )
         labels = {
+            "deployment_site": "Deployment Site",
             "contract_title": "Contract Title",
+            "contract_type": "Contract Type",
+            "contract_manager": "Contract Manager",
             "client_representative": "Client Representative",
             "client_representative_title": "Client Representative Title",
+            "client_representative_phone": "Client Phone Number",
             "client_representative_email": "Client Representative Email",
             "company_representative": "Company Representative",
             "company_representative_title": "Company Representative Title",
             "signed_date": "Signed Date",
+            "renewal_date": "Renewal Date",
+            "renewal_reminder_days": "Renewal Reminder Days",
             "billing_rate": "Billing Rate",
-            "contract_value": "Contract Value",
-            "billing_cycle": "Billing Cycle",
+            "monthly_contract_value": "Monthly Contract Value",
+            "annual_contract_value": "Annual Contract Value",
+            "contract_value": "Total Contract Value",
+            "billing_cycle": "Billing Frequency",
+            "payment_terms": "Payment Terms",
             "payment_terms_days": "Payment Terms Days",
             "payment_instructions": "Payment Instructions",
+            "vat_applicable": "VAT Applicable",
+            "vat_rate": "VAT Rate",
             "service_scope": "Scope of Services",
             "service_location": "Service Location",
             "service_hours": "Service Hours",
             "response_time_sla": "Response Time SLA",
+            "incident_escalation_time": "Incident Escalation Time",
+            "patrol_frequency": "Patrol Frequency",
             "supervision_frequency": "Supervision Frequency",
             "guard_training_requirements": "Guard Training Requirements",
+            "day_guards_required": "Day Guards",
+            "night_guards_required": "Night Guards",
+            "supervisors_required": "Supervisors",
+            "shift_pattern": "Shift Pattern",
+            "arming_status": "Armed / Unarmed",
+            "patrol_required": "Patrol Required",
+            "radio_required": "Radio Required",
+            "torch_required": "Torch Required",
+            "metal_detector_required": "Metal Detector Required",
+            "vehicle_required": "Vehicle Required",
+            "uniform_requirement": "Uniform Requirement",
             "client_obligations": "Client Obligations",
             "company_obligations": "Company Obligations",
             "confidentiality_clause": "Confidentiality Clause",
@@ -204,6 +270,11 @@ class ContractForm(SecureModelForm):
             "renewal_terms": "Renewal Terms",
             "governing_law": "Governing Law",
             "special_conditions": "Special Conditions",
+            "late_payment_penalty": "Late Payment Penalty",
+            "service_breach_penalty": "Service Breach Penalty",
+            "signed_contract": "Signed Contract PDF",
+            "amendment_document": "Amendment Document",
+            "renewal_document": "Renewal Document",
             "dog_count": "Dogs",
             "dog_rate": "Price Per Dog",
             "metal_detector_count": "Metal Detectors",
@@ -217,14 +288,19 @@ class ContractForm(SecureModelForm):
         }
         help_texts = {
             "service_type": "Select Others to record additional contract deliverables.",
-            "contract_value": "Total contract value when agreed. Leave 0 if billed only by deployment requirements.",
+            "monthly_contract_value": "Example: UGX 5,900,000.",
+            "annual_contract_value": "Example: UGX 70,800,000.",
+            "contract_value": "Overall value for one-time or framework contracts. Monthly/annual values can be calculated from it when blank.",
             "payment_terms_days": "Number of days after invoice date before payment is due.",
             "termination_notice_days": "Required notice period before either party can terminate.",
+            "vat_rate": "Use 0.18 for 18% VAT.",
+            "renewal_reminder_days": "Days before renewal or expiry when management should be alerted.",
         }
         widgets = {
             "signed_date": forms.DateInput(attrs={"type": "date"}),
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
+            "renewal_date": forms.DateInput(attrs={"type": "date"}),
             "payment_instructions": forms.Textarea(attrs={"rows": 3}),
             "service_scope": forms.Textarea(attrs={"rows": 4}),
             "guard_training_requirements": forms.Textarea(attrs={"rows": 3}),
@@ -233,29 +309,91 @@ class ContractForm(SecureModelForm):
             "confidentiality_clause": forms.Textarea(attrs={"rows": 3}),
             "renewal_terms": forms.Textarea(attrs={"rows": 3}),
             "special_conditions": forms.Textarea(attrs={"rows": 3}),
+            "signed_contract": forms.FileInput(attrs={"accept": ".pdf,.doc,.docx,.jpg,.jpeg,.png"}),
+            "amendment_document": forms.FileInput(attrs={"accept": ".pdf,.doc,.docx,.jpg,.jpeg,.png"}),
+            "renewal_document": forms.FileInput(attrs={"accept": ".pdf,.doc,.docx,.jpg,.jpeg,.png"}),
             "terms": forms.Textarea(attrs={"rows": 4}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["currency"].initial = self.fields["currency"].initial or "UGX"
+        client = None
+        client_id = self.data.get("client") if self.data else None
+        if client_id:
+            try:
+                client = models.Client.objects.get(pk=client_id)
+            except (TypeError, ValueError, models.Client.DoesNotExist):
+                client = None
+        elif self.instance and self.instance.pk:
+            client = self.instance.client
+        if client:
+            self.fields["deployment_site"].queryset = models.Site.objects.filter(client=client).order_by("site_name")
+        else:
+            self.fields["deployment_site"].queryset = models.Site.objects.none()
+
+        self.fields["contract_manager"].queryset = models.Employee.objects.order_by("first_name", "last_name")
+        self.fields["contract_type"].initial = self.fields["contract_type"].initial or models.Contract.ContractType.FIXED_TERM
+        self.fields["currency"].initial = self.fields["currency"].initial or models.Contract.Currency.UGX
         self.fields["billing_cycle"].initial = self.fields["billing_cycle"].initial or models.Contract.BillingCycle.MONTHLY
+        self.fields["payment_terms"].initial = self.fields["payment_terms"].initial or models.Contract.PaymentTerm.NET_30
         self.fields["payment_terms_days"].initial = self.fields["payment_terms_days"].initial or 30
+        self.fields["vat_rate"].initial = self.fields["vat_rate"].initial or "0.18"
         self.fields["termination_notice_days"].initial = self.fields["termination_notice_days"].initial or 30
+        self.fields["renewal_reminder_days"].initial = self.fields["renewal_reminder_days"].initial or 60
         self.fields["governing_law"].initial = self.fields["governing_law"].initial or "Uganda"
+        self.fields["uniform_requirement"].initial = self.fields["uniform_requirement"].initial or models.Contract.UniformRequirement.COMPANY
+        self.fields["arming_status"].initial = self.fields["arming_status"].initial or models.Contract.ArmingStatus.UNARMED
         for field_name in self.DEFAULTED_FIELDS:
             self.fields[field_name].required = False
         for field_name in self.DELIVERABLE_FIELDS:
             self.fields[field_name].required = False
+        for field_name in ("vat_applicable", "patrol_required", "radio_required", "torch_required", "metal_detector_required", "vehicle_required"):
+            self.fields[field_name].widget.attrs.pop("class", None)
 
     def clean(self):
         cleaned_data = super().clean()
+        client = cleaned_data.get("client")
+        deployment_site = cleaned_data.get("deployment_site")
+        if client and deployment_site and deployment_site.client_id != client.id:
+            self.add_error("deployment_site", "Deployment site must belong to the selected client.")
+
+        monthly_value = cleaned_data.get("monthly_contract_value") or 0
+        annual_value = cleaned_data.get("annual_contract_value") or 0
+        contract_value = cleaned_data.get("contract_value") or 0
+        if not annual_value and monthly_value:
+            annual_value = monthly_value * 12
+        if not monthly_value and annual_value:
+            monthly_value = annual_value / 12
+        if not contract_value:
+            contract_value = annual_value or monthly_value
+        cleaned_data["monthly_contract_value"] = monthly_value
+        cleaned_data["annual_contract_value"] = annual_value
         cleaned_data["contract_value"] = cleaned_data.get("contract_value") or 0
-        cleaned_data["currency"] = (cleaned_data.get("currency") or "UGX").upper()
+        cleaned_data["contract_value"] = contract_value
+        cleaned_data["currency"] = (cleaned_data.get("currency") or models.Contract.Currency.UGX).upper()
         cleaned_data["billing_cycle"] = cleaned_data.get("billing_cycle") or models.Contract.BillingCycle.MONTHLY
+        cleaned_data["contract_type"] = cleaned_data.get("contract_type") or models.Contract.ContractType.FIXED_TERM
+        cleaned_data["payment_terms"] = cleaned_data.get("payment_terms") or models.Contract.PaymentTerm.NET_30
+        if cleaned_data["payment_terms"] == models.Contract.PaymentTerm.NET_30:
+            cleaned_data["payment_terms_days"] = 30
+        elif cleaned_data["payment_terms"] == models.Contract.PaymentTerm.NET_60:
+            cleaned_data["payment_terms_days"] = 60
+        elif cleaned_data["payment_terms"] == models.Contract.PaymentTerm.ADVANCE:
+            cleaned_data["payment_terms_days"] = 0
+        else:
+            cleaned_data["payment_terms_days"] = cleaned_data.get("payment_terms_days") or 30
         cleaned_data["payment_terms_days"] = cleaned_data.get("payment_terms_days") or 30
+        if cleaned_data["payment_terms"] == models.Contract.PaymentTerm.ADVANCE:
+            cleaned_data["payment_terms_days"] = 0
+        cleaned_data["vat_rate"] = cleaned_data.get("vat_rate") or Decimal("0.18")
         cleaned_data["termination_notice_days"] = cleaned_data.get("termination_notice_days") or 30
+        cleaned_data["renewal_reminder_days"] = cleaned_data.get("renewal_reminder_days") or 60
         cleaned_data["governing_law"] = cleaned_data.get("governing_law") or "Uganda"
+        cleaned_data["uniform_requirement"] = cleaned_data.get("uniform_requirement") or models.Contract.UniformRequirement.COMPANY
+        cleaned_data["arming_status"] = cleaned_data.get("arming_status") or models.Contract.ArmingStatus.UNARMED
+        cleaned_data["day_guards_required"] = cleaned_data.get("day_guards_required") or 0
+        cleaned_data["night_guards_required"] = cleaned_data.get("night_guards_required") or 0
+        cleaned_data["supervisors_required"] = cleaned_data.get("supervisors_required") or 0
         if cleaned_data.get("service_type") != models.Contract.ServiceType.OTHERS:
             for field_name in self.DELIVERABLE_FIELDS:
                 cleaned_data[field_name] = 0

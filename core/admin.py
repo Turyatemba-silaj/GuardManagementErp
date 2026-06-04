@@ -206,20 +206,23 @@ class ContractAdmin(admin.ModelAdmin):
     list_display = (
         "contract_number",
         "contract_title",
+        "contract_type",
         "client",
+        "deployment_site",
         "service_type",
         "billing_cycle",
         "required_guards",
-        "other_deliverables",
+        "monthly_contract_value",
+        "annual_contract_value",
         "start_date",
         "end_date",
-        "billing_rate",
-        "contract_value",
+        "renewal_date",
         "status",
     )
-    list_filter = ("status", "service_type", "billing_cycle")
+    list_filter = ("status", "contract_type", "service_type", "billing_cycle", "currency", "vat_applicable")
     search_fields = ("contract_number", "contract_title", "client__client_name", "terms", "service_scope")
     date_hierarchy = "start_date"
+    autocomplete_fields = ("client", "deployment_site", "contract_manager")
 
 
 @admin.register(models.ContractSiteRequirement)

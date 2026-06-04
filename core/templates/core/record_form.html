@@ -133,6 +133,44 @@
     .contract-section .field-wide {
         grid-column: 1 / -1;
     }
+    .contract-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .contract-metric {
+        display: grid;
+        gap: 6px;
+    }
+    .contract-metric span {
+        color: var(--sentinel-muted);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+    .contract-metric strong {
+        color: var(--sentinel-ink);
+        font-size: 16px;
+    }
+    .contract-progress {
+        height: 10px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e5edf2;
+    }
+    .contract-progress span {
+        display: block;
+        height: 100%;
+        background: var(--sentinel-green);
+    }
+    .check-field {
+        align-content: end;
+    }
+    .check-field label {
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+    }
     .contract-deliverable-field {
         display: none;
     }
@@ -140,6 +178,7 @@
         display: grid;
     }
     @media (max-width: 720px) {
+        .contract-summary,
         .contract-section {
             grid-template-columns: 1fr;
         }
@@ -233,56 +272,75 @@
         {% csrf_token %}
         {% if slug == "contracts" %}
             {{ form.non_field_errors }}
-            <section class="contract-section" id="contract-deliverables-section">
-                <h2>Contract Identity</h2>
+            {% if record %}
+                <section class="contract-section contract-summary">
+                    <h2>Contract Status</h2>
+                    <div class="contract-metric">
+                        <span>Contract Duration</span>
+                        <strong>{% if record.contract_duration_months %}{{ record.contract_duration_months }} months{% else %}-{% endif %}</strong>
+                    </div>
+                    <div class="contract-metric">
+                        <span>Remaining Days</span>
+                        <strong>{% if record.remaining_days != None %}{{ record.remaining_days }} days{% else %}-{% endif %}</strong>
+                    </div>
+                    <div class="contract-metric field-wide">
+                        <span>Contract Progress</span>
+                        <div class="contract-progress" aria-label="Contract progress">
+                            <span style="width: {{ record.progress_percent }}%;"></span>
+                        </div>
+                        <strong>{{ record.progress_percent }}% completed</strong>
+                    </div>
+                </section>
+            {% endif %}
+            <section class="contract-section">
+                <h2>Section 1: Client Information</h2>
                 <div class="field">{{ form.client.label_tag }}{{ form.client }}{{ form.client.errors }}</div>
-                <div class="field">{{ form.contract_number.label_tag }}{{ form.contract_number }}{{ form.contract_number.errors }}</div>
-                <div class="field field-wide">{{ form.contract_title.label_tag }}{{ form.contract_title }}{{ form.contract_title.errors }}</div>
-                <div class="field">{{ form.service_type.label_tag }}{{ form.service_type }}{% if form.service_type.help_text %}<span class="helptext">{{ form.service_type.help_text }}</span>{% endif %}{{ form.service_type.errors }}</div>
-                <div class="field">{{ form.status.label_tag }}{{ form.status }}{{ form.status.errors }}</div>
+                <div class="field">{{ form.client_representative.label_tag }}{{ form.client_representative }}{{ form.client_representative.errors }}</div>
+                <div class="field">{{ form.client_representative_phone.label_tag }}{{ form.client_representative_phone }}{{ form.client_representative_phone.errors }}</div>
+                <div class="field">{{ form.client_representative_email.label_tag }}{{ form.client_representative_email }}{{ form.client_representative_email.errors }}</div>
+                <div class="field">{{ form.client_representative_title.label_tag }}{{ form.client_representative_title }}{{ form.client_representative_title.errors }}</div>
+                <div class="field">{{ form.contract_manager.label_tag }}{{ form.contract_manager }}{{ form.contract_manager.errors }}</div>
             </section>
             <section class="contract-section">
-                <h2>Parties and Signatories</h2>
-                <div class="field">{{ form.client_representative.label_tag }}{{ form.client_representative }}{{ form.client_representative.errors }}</div>
-                <div class="field">{{ form.client_representative_title.label_tag }}{{ form.client_representative_title }}{{ form.client_representative_title.errors }}</div>
-                <div class="field">{{ form.client_representative_email.label_tag }}{{ form.client_representative_email }}{{ form.client_representative_email.errors }}</div>
+                <h2>Section 2: Contract Details</h2>
+                <div class="field">{{ form.contract_number.label_tag }}{{ form.contract_number }}{{ form.contract_number.errors }}</div>
+                <div class="field">{{ form.contract_title.label_tag }}{{ form.contract_title }}{{ form.contract_title.errors }}</div>
+                <div class="field">{{ form.contract_type.label_tag }}{{ form.contract_type }}{{ form.contract_type.errors }}</div>
+                <div class="field">{{ form.service_type.label_tag }}{{ form.service_type }}{% if form.service_type.help_text %}<span class="helptext">{{ form.service_type.help_text }}</span>{% endif %}{{ form.service_type.errors }}</div>
+                <div class="field">{{ form.deployment_site.label_tag }}{{ form.deployment_site }}{{ form.deployment_site.errors }}</div>
+                <div class="field">{{ form.status.label_tag }}{{ form.status }}{{ form.status.errors }}</div>
                 <div class="field">{{ form.company_representative.label_tag }}{{ form.company_representative }}{{ form.company_representative.errors }}</div>
                 <div class="field">{{ form.company_representative_title.label_tag }}{{ form.company_representative_title }}{{ form.company_representative_title.errors }}</div>
             </section>
             <section class="contract-section">
-                <h2>Term and Commercials</h2>
-                <div class="field">{{ form.signed_date.label_tag }}{{ form.signed_date }}{{ form.signed_date.errors }}</div>
-                <div class="field">{{ form.start_date.label_tag }}{{ form.start_date }}{{ form.start_date.errors }}</div>
-                <div class="field">{{ form.end_date.label_tag }}{{ form.end_date }}{{ form.end_date.errors }}</div>
-                <div class="field">{{ form.billing_cycle.label_tag }}{{ form.billing_cycle }}{{ form.billing_cycle.errors }}</div>
+                <h2>Section 3: Financial Information</h2>
                 <div class="field">{{ form.billing_rate.label_tag }}{{ form.billing_rate }}{{ form.billing_rate.errors }}</div>
-                <div class="field">{{ form.contract_value.label_tag }}{{ form.contract_value }}{% if form.contract_value.help_text %}<span class="helptext">{{ form.contract_value.help_text }}</span>{% endif %}{{ form.contract_value.errors }}</div>
-                <div class="field">{{ form.currency.label_tag }}{{ form.currency }}{{ form.currency.errors }}</div>
+                <div class="field">{{ form.billing_cycle.label_tag }}{{ form.billing_cycle }}{{ form.billing_cycle.errors }}</div>
+                <div class="field">{{ form.payment_terms.label_tag }}{{ form.payment_terms }}{{ form.payment_terms.errors }}</div>
                 <div class="field">{{ form.payment_terms_days.label_tag }}{{ form.payment_terms_days }}{% if form.payment_terms_days.help_text %}<span class="helptext">{{ form.payment_terms_days.help_text }}</span>{% endif %}{{ form.payment_terms_days.errors }}</div>
+                <div class="field">{{ form.currency.label_tag }}{{ form.currency }}{{ form.currency.errors }}</div>
+                <div class="field">{{ form.monthly_contract_value.label_tag }}{{ form.monthly_contract_value }}{% if form.monthly_contract_value.help_text %}<span class="helptext">{{ form.monthly_contract_value.help_text }}</span>{% endif %}{{ form.monthly_contract_value.errors }}</div>
+                <div class="field">{{ form.annual_contract_value.label_tag }}{{ form.annual_contract_value }}{% if form.annual_contract_value.help_text %}<span class="helptext">{{ form.annual_contract_value.help_text }}</span>{% endif %}{{ form.annual_contract_value.errors }}</div>
+                <div class="field">{{ form.contract_value.label_tag }}{{ form.contract_value }}{% if form.contract_value.help_text %}<span class="helptext">{{ form.contract_value.help_text }}</span>{% endif %}{{ form.contract_value.errors }}</div>
+                <div class="field check-field"><label>{{ form.vat_applicable }} <span>{{ form.vat_applicable.label }}</span></label>{{ form.vat_applicable.errors }}</div>
+                <div class="field">{{ form.vat_rate.label_tag }}{{ form.vat_rate }}{% if form.vat_rate.help_text %}<span class="helptext">{{ form.vat_rate.help_text }}</span>{% endif %}{{ form.vat_rate.errors }}</div>
                 <div class="field field-wide">{{ form.payment_instructions.label_tag }}{{ form.payment_instructions }}{{ form.payment_instructions.errors }}</div>
             </section>
             <section class="contract-section">
-                <h2>Scope and Service Levels</h2>
-                <div class="field field-wide">{{ form.service_scope.label_tag }}{{ form.service_scope }}{{ form.service_scope.errors }}</div>
-                <div class="field">{{ form.service_location.label_tag }}{{ form.service_location }}{{ form.service_location.errors }}</div>
-                <div class="field">{{ form.service_hours.label_tag }}{{ form.service_hours }}{{ form.service_hours.errors }}</div>
-                <div class="field">{{ form.response_time_sla.label_tag }}{{ form.response_time_sla }}{{ form.response_time_sla.errors }}</div>
-                <div class="field">{{ form.supervision_frequency.label_tag }}{{ form.supervision_frequency }}{{ form.supervision_frequency.errors }}</div>
-                <div class="field field-wide">{{ form.guard_training_requirements.label_tag }}{{ form.guard_training_requirements }}{{ form.guard_training_requirements.errors }}</div>
+                <h2>Section 4: Deployment Requirements</h2>
+                <div class="field">{{ form.day_guards_required.label_tag }}{{ form.day_guards_required }}{{ form.day_guards_required.errors }}</div>
+                <div class="field">{{ form.night_guards_required.label_tag }}{{ form.night_guards_required }}{{ form.night_guards_required.errors }}</div>
+                <div class="field">{{ form.supervisors_required.label_tag }}{{ form.supervisors_required }}{{ form.supervisors_required.errors }}</div>
+                <div class="field">{{ form.shift_pattern.label_tag }}{{ form.shift_pattern }}{{ form.shift_pattern.errors }}</div>
+                <div class="field">{{ form.arming_status.label_tag }}{{ form.arming_status }}{{ form.arming_status.errors }}</div>
+                <div class="field">{{ form.uniform_requirement.label_tag }}{{ form.uniform_requirement }}{{ form.uniform_requirement.errors }}</div>
+                <div class="field check-field"><label>{{ form.patrol_required }} <span>{{ form.patrol_required.label }}</span></label>{{ form.patrol_required.errors }}</div>
+                <div class="field check-field"><label>{{ form.radio_required }} <span>{{ form.radio_required.label }}</span></label>{{ form.radio_required.errors }}</div>
+                <div class="field check-field"><label>{{ form.torch_required }} <span>{{ form.torch_required.label }}</span></label>{{ form.torch_required.errors }}</div>
+                <div class="field check-field"><label>{{ form.metal_detector_required }} <span>{{ form.metal_detector_required.label }}</span></label>{{ form.metal_detector_required.errors }}</div>
+                <div class="field check-field"><label>{{ form.vehicle_required }} <span>{{ form.vehicle_required.label }}</span></label>{{ form.vehicle_required.errors }}</div>
             </section>
-            <section class="contract-section">
-                <h2>Obligations and Legal Terms</h2>
-                <div class="field field-wide">{{ form.client_obligations.label_tag }}{{ form.client_obligations }}{{ form.client_obligations.errors }}</div>
-                <div class="field field-wide">{{ form.company_obligations.label_tag }}{{ form.company_obligations }}{{ form.company_obligations.errors }}</div>
-                <div class="field field-wide">{{ form.confidentiality_clause.label_tag }}{{ form.confidentiality_clause }}{{ form.confidentiality_clause.errors }}</div>
-                <div class="field">{{ form.liability_limit.label_tag }}{{ form.liability_limit }}{{ form.liability_limit.errors }}</div>
-                <div class="field">{{ form.termination_notice_days.label_tag }}{{ form.termination_notice_days }}{% if form.termination_notice_days.help_text %}<span class="helptext">{{ form.termination_notice_days.help_text }}</span>{% endif %}{{ form.termination_notice_days.errors }}</div>
-                <div class="field field-wide">{{ form.renewal_terms.label_tag }}{{ form.renewal_terms }}{{ form.renewal_terms.errors }}</div>
-                <div class="field">{{ form.governing_law.label_tag }}{{ form.governing_law }}{{ form.governing_law.errors }}</div>
-                <div class="field field-wide">{{ form.special_conditions.label_tag }}{{ form.special_conditions }}{{ form.special_conditions.errors }}</div>
-                <div class="field field-wide">{{ form.terms.label_tag }}{{ form.terms }}{{ form.terms.errors }}</div>
-            </section>
-            <section class="contract-section">
+            <section class="contract-section" id="contract-deliverables-section">
                 <h2>Additional Deliverables</h2>
                 <div class="field contract-deliverable-field">{{ form.dog_count.label_tag }}{{ form.dog_count }}{{ form.dog_count.errors }}</div>
                 <div class="field contract-deliverable-field">{{ form.dog_rate.label_tag }}{{ form.dog_rate }}{{ form.dog_rate.errors }}</div>
@@ -294,6 +352,42 @@
                 <div class="field contract-deliverable-field">{{ form.panic_baton_rate.label_tag }}{{ form.panic_baton_rate }}{{ form.panic_baton_rate.errors }}</div>
                 <div class="field contract-deliverable-field">{{ form.handcuffs_count.label_tag }}{{ form.handcuffs_count }}{{ form.handcuffs_count.errors }}</div>
                 <div class="field contract-deliverable-field">{{ form.handcuffs_rate.label_tag }}{{ form.handcuffs_rate }}{{ form.handcuffs_rate.errors }}</div>
+            </section>
+            <section class="contract-section">
+                <h2>Section 5: Contract Dates</h2>
+                <div class="field">{{ form.signed_date.label_tag }}{{ form.signed_date }}{{ form.signed_date.errors }}</div>
+                <div class="field">{{ form.start_date.label_tag }}{{ form.start_date }}{{ form.start_date.errors }}</div>
+                <div class="field">{{ form.end_date.label_tag }}{{ form.end_date }}{{ form.end_date.errors }}</div>
+                <div class="field">{{ form.renewal_date.label_tag }}{{ form.renewal_date }}{{ form.renewal_date.errors }}</div>
+                <div class="field">{{ form.renewal_reminder_days.label_tag }}{{ form.renewal_reminder_days }}{% if form.renewal_reminder_days.help_text %}<span class="helptext">{{ form.renewal_reminder_days.help_text }}</span>{% endif %}{{ form.renewal_reminder_days.errors }}</div>
+            </section>
+            <section class="contract-section">
+                <h2>Section 6: Documents</h2>
+                <div class="field">{{ form.signed_contract.label_tag }}{{ form.signed_contract }}{{ form.signed_contract.errors }}</div>
+                <div class="field">{{ form.amendment_document.label_tag }}{{ form.amendment_document }}{{ form.amendment_document.errors }}</div>
+                <div class="field">{{ form.renewal_document.label_tag }}{{ form.renewal_document }}{{ form.renewal_document.errors }}</div>
+            </section>
+            <section class="contract-section">
+                <h2>Section 7: Terms and SLA</h2>
+                <div class="field field-wide">{{ form.service_scope.label_tag }}{{ form.service_scope }}{{ form.service_scope.errors }}</div>
+                <div class="field">{{ form.service_location.label_tag }}{{ form.service_location }}{{ form.service_location.errors }}</div>
+                <div class="field">{{ form.service_hours.label_tag }}{{ form.service_hours }}{{ form.service_hours.errors }}</div>
+                <div class="field">{{ form.response_time_sla.label_tag }}{{ form.response_time_sla }}{{ form.response_time_sla.errors }}</div>
+                <div class="field">{{ form.incident_escalation_time.label_tag }}{{ form.incident_escalation_time }}{{ form.incident_escalation_time.errors }}</div>
+                <div class="field">{{ form.patrol_frequency.label_tag }}{{ form.patrol_frequency }}{{ form.patrol_frequency.errors }}</div>
+                <div class="field">{{ form.supervision_frequency.label_tag }}{{ form.supervision_frequency }}{{ form.supervision_frequency.errors }}</div>
+                <div class="field field-wide">{{ form.guard_training_requirements.label_tag }}{{ form.guard_training_requirements }}{{ form.guard_training_requirements.errors }}</div>
+                <div class="field field-wide">{{ form.client_obligations.label_tag }}{{ form.client_obligations }}{{ form.client_obligations.errors }}</div>
+                <div class="field field-wide">{{ form.company_obligations.label_tag }}{{ form.company_obligations }}{{ form.company_obligations.errors }}</div>
+                <div class="field field-wide">{{ form.confidentiality_clause.label_tag }}{{ form.confidentiality_clause }}{{ form.confidentiality_clause.errors }}</div>
+                <div class="field">{{ form.liability_limit.label_tag }}{{ form.liability_limit }}{{ form.liability_limit.errors }}</div>
+                <div class="field">{{ form.termination_notice_days.label_tag }}{{ form.termination_notice_days }}{% if form.termination_notice_days.help_text %}<span class="helptext">{{ form.termination_notice_days.help_text }}</span>{% endif %}{{ form.termination_notice_days.errors }}</div>
+                <div class="field">{{ form.late_payment_penalty.label_tag }}{{ form.late_payment_penalty }}{{ form.late_payment_penalty.errors }}</div>
+                <div class="field">{{ form.service_breach_penalty.label_tag }}{{ form.service_breach_penalty }}{{ form.service_breach_penalty.errors }}</div>
+                <div class="field field-wide">{{ form.renewal_terms.label_tag }}{{ form.renewal_terms }}{{ form.renewal_terms.errors }}</div>
+                <div class="field">{{ form.governing_law.label_tag }}{{ form.governing_law }}{{ form.governing_law.errors }}</div>
+                <div class="field field-wide">{{ form.special_conditions.label_tag }}{{ form.special_conditions }}{{ form.special_conditions.errors }}</div>
+                <div class="field field-wide">{{ form.terms.label_tag }}{{ form.terms }}{{ form.terms.errors }}</div>
             </section>
         {% elif slug == "contract-site-requirements" %}
             {{ form.non_field_errors }}
@@ -363,6 +457,8 @@
         const serviceType = document.getElementById("id_service_type");
         const fields = Array.from(document.querySelectorAll(".contract-deliverable-field"));
         const deliverablesSection = document.getElementById("contract-deliverables-section");
+        const clientSelect = document.getElementById("id_client");
+        const siteSelect = document.getElementById("id_deployment_site");
 
         function syncDeliverables() {
             const showDeliverables = serviceType && serviceType.value === "Others";
@@ -378,9 +474,47 @@
             });
         }
 
+        function setSiteOptions(sites) {
+            if (!siteSelect) {
+                return;
+            }
+            const currentValue = siteSelect.value;
+            siteSelect.innerHTML = '<option value="">---------</option>';
+            sites.forEach((site) => {
+                const option = document.createElement("option");
+                option.value = site.id;
+                option.textContent = site.name;
+                siteSelect.appendChild(option);
+            });
+            if (currentValue && Array.from(siteSelect.options).some((option) => option.value === currentValue)) {
+                siteSelect.value = currentValue;
+            }
+        }
+
+        async function loadClientSites() {
+            if (!clientSelect || !clientSelect.value) {
+                setSiteOptions([]);
+                return;
+            }
+            const response = await fetch(`/clients/${clientSelect.value}/contract-requirement-data/`, {
+                headers: {"Accept": "application/json"}
+            });
+            if (!response.ok) {
+                return;
+            }
+            const data = await response.json();
+            setSiteOptions(data.sites || []);
+        }
+
         if (serviceType) {
             serviceType.addEventListener("change", syncDeliverables);
             syncDeliverables();
+        }
+        if (clientSelect && siteSelect) {
+            clientSelect.addEventListener("change", loadClientSites);
+            if (clientSelect.value) {
+                loadClientSites();
+            }
         }
     })();
 </script>

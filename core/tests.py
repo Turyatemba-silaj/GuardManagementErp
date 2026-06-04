@@ -430,30 +430,57 @@ class ContractDeliverableFormTests(TestCase):
         self.assertEqual(contract.other_deliverables, "-")
 
     def test_standard_contract_fields_are_saved(self):
+        site = Site.objects.create(
+            client=self.client_record,
+            site_name="Head Office",
+            site_address="Plot 1",
+            city="Kampala",
+        )
         form = ContractForm(
             data={
                 **self.base_data,
+                "deployment_site": site.pk,
                 "contract_number": "STD-CON-001",
                 "contract_title": "Manned Guarding Service Agreement",
+                "contract_type": Contract.ContractType.RENEWABLE,
                 "service_type": Contract.ServiceType.MANNED_GUARDING,
                 "client_representative": "Jane Client",
                 "client_representative_title": "Facilities Manager",
+                "client_representative_phone": "0700000111",
                 "client_representative_email": "jane@example.com",
                 "company_representative": "John Sentinel",
                 "company_representative_title": "Operations Director",
                 "signed_date": "2026-01-01",
                 "end_date": "2026-12-31",
-                "contract_value": "12000000.00",
+                "renewal_date": "2026-11-30",
+                "renewal_reminder_days": "90",
+                "monthly_contract_value": "5900000.00",
+                "annual_contract_value": "70800000.00",
                 "currency": "UGX",
                 "billing_cycle": Contract.BillingCycle.MONTHLY,
+                "payment_terms": Contract.PaymentTerm.CUSTOM,
                 "payment_terms_days": "14",
                 "payment_instructions": "Invoice payable by bank transfer.",
+                "vat_applicable": "on",
+                "vat_rate": "0.18",
                 "service_scope": "Provide trained guards and supervision.",
                 "service_location": "Kampala sites",
                 "service_hours": "24/7",
                 "response_time_sla": "30 minutes",
+                "incident_escalation_time": "15 minutes",
+                "patrol_frequency": "Hourly",
                 "supervision_frequency": "Daily",
                 "guard_training_requirements": "Licensed and inducted guards.",
+                "day_guards_required": "5",
+                "night_guards_required": "4",
+                "supervisors_required": "1",
+                "shift_pattern": Contract.ShiftPattern.TWELVE_HOURS,
+                "arming_status": Contract.ArmingStatus.UNARMED,
+                "patrol_required": "on",
+                "radio_required": "on",
+                "torch_required": "on",
+                "metal_detector_required": "on",
+                "uniform_requirement": Contract.UniformRequirement.COMPANY,
                 "client_obligations": "Provide access and site briefing.",
                 "company_obligations": "Provide guards, supervision, and reports.",
                 "confidentiality_clause": "Both parties keep operational information confidential.",
@@ -462,6 +489,8 @@ class ContractDeliverableFormTests(TestCase):
                 "renewal_terms": "Renewable by written agreement.",
                 "governing_law": "Uganda",
                 "special_conditions": "Night patrol included.",
+                "late_payment_penalty": "2% per month.",
+                "service_breach_penalty": "Service credit after verified breach.",
                 "terms": "Standard security services terms.",
             }
         )
@@ -470,11 +499,66 @@ class ContractDeliverableFormTests(TestCase):
         contract = form.save()
 
         self.assertEqual(contract.contract_title, "Manned Guarding Service Agreement")
+        self.assertEqual(contract.deployment_site, site)
+        self.assertEqual(contract.contract_type, Contract.ContractType.RENEWABLE)
         self.assertEqual(contract.client_representative, "Jane Client")
+        self.assertEqual(contract.client_representative_phone, "0700000111")
         self.assertEqual(contract.billing_cycle, Contract.BillingCycle.MONTHLY)
+        self.assertEqual(contract.payment_terms, Contract.PaymentTerm.CUSTOM)
         self.assertEqual(contract.payment_terms_days, 14)
         self.assertEqual(contract.termination_notice_days, 30)
         self.assertEqual(contract.service_hours, "24/7")
+        self.assertEqual(contract.monthly_contract_value, Decimal("5900000.00"))
+        self.assertEqual(contract.annual_contract_value, Decimal("70800000.00"))
+        self.assertEqual(contract.contract_value, Decimal("70800000.00"))
+        self.assertEqual(contract.required_guards, 10)
+        self.assertTrue(contract.patrol_required)
+        self.assertTrue(contract.radio_required)
+        self.assertTrue(contract.metal_detector_required)
+        self.assertEqual(contract.renewal_reminder_days, 90)
+        self.assertEqual(contract.vat_amount, Decimal("12744000.00"))
+        self.assertEqual(contract.total_contract_value_with_vat, Decimal("83544000.00"))
+
+    def test_contract_calculates_missing_annual_value_from_monthly_value(self):
+        form = ContractForm(
+            data={
+                **self.base_data,
+                "contract_number": "MONTHLY-CALC-001",
+                "service_type": Contract.ServiceType.MANNED_GUARDING,
+                "monthly_contract_value": "5900000.00",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        contract = form.save()
+
+        self.assertEqual(contract.annual_contract_value, Decimal("70800000.00"))
+        self.assertEqual(contract.contract_value, Decimal("70800000.00"))
+
+    def test_contract_site_must_belong_to_selected_client(self):
+        other_client = Client.objects.create(
+            client_name="Other Contract Client",
+            contact_person="B",
+            phone_number="0700000102",
+            contract_start_date="2026-01-01",
+        )
+        other_site = Site.objects.create(
+            client=other_client,
+            site_name="Other Site",
+            site_address="Plot 2",
+            city="Kampala",
+        )
+        form = ContractForm(
+            data={
+                **self.base_data,
+                "deployment_site": other_site.pk,
+                "contract_number": "BAD-SITE-001",
+                "service_type": Contract.ServiceType.MANNED_GUARDING,
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("deployment_site", form.errors)
 
     def test_contract_end_date_cannot_be_before_start_date(self):
         form = ContractForm(
