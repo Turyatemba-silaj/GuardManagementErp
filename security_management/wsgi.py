@@ -33,3 +33,5 @@ except Exception as startup_error:
             ],
         )
         return [body]
+
+app = application
