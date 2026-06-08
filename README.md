@@ -25,13 +25,12 @@ pip install -r requirements.txt
 ## Setup
 
 ```bash
-set DATABASE_URL=postgresql://postgres:<password>@localhost:5432/erp
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-For temporary local development without PostgreSQL, set `DJANGO_USE_SQLITE=true`. Do not use SQLite for the live server.
+Local debug runs use the bundled `db.sqlite3` automatically unless PostgreSQL variables are configured. To test with PostgreSQL, set `DATABASE_URL=postgresql://postgres:<password>@localhost:5432/erp` or the `DJANGO_DB_*` variables. Do not use SQLite for the live server.
 
 Open the system at:
 

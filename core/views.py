@@ -21,7 +21,7 @@ from django.core.exceptions import ValidationError
 from django.db import DatabaseError, connection
 from django.db import transaction
 from django.db.models import Count, ProtectedError, Sum
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncMonth
 from django.forms import DateInput, DateTimeInput, FileInput, TimeInput, modelform_factory
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.db.models import Q
@@ -118,6 +118,27 @@ def column_label(column):
         "updated_at": "Updated At",
     }
     return labels.get(column, column.replace("_", " ").title())
+
+
+def compact_money(value):
+    value = Decimal(value or 0)
+    sign = "-" if value < 0 else ""
+    value = abs(value)
+    if value >= Decimal("1000000000"):
+        return f"{sign}${value / Decimal('1000000000'):.2f}B"
+    if value >= Decimal("1000000"):
+        return f"{sign}${value / Decimal('1000000'):.2f}M"
+    if value >= Decimal("1000"):
+        return f"{sign}${value / Decimal('1000'):.1f}K"
+    return f"{sign}${value:.0f}"
+
+
+def percent_value(numerator, denominator):
+    numerator = Decimal(numerator or 0)
+    denominator = Decimal(denominator or 0)
+    if not denominator:
+        return Decimal("0.0")
+    return ((numerator / denominator) * Decimal("100")).quantize(Decimal("0.1"))
 
 
 def column_value(obj, column):
@@ -252,6 +273,51 @@ def home(request):
 def dashboard(request):
     try:
         visible_groups = visible_grouped_registry(request.user)
+        selected_year = request.GET.get("year", "")
+        selected_month = request.GET.get("month", "")
+        selected_service_type = request.GET.get("client_type", "")
+        selected_contract_type = request.GET.get("contract_type", "")
+        selected_region = request.GET.get("region", "")
+        selected_status = request.GET.get("status", "")
+
+        contracts_qs = models.Contract.objects.select_related("client", "deployment_site")
+        if selected_year:
+            contracts_qs = contracts_qs.filter(start_date__year=selected_year)
+        if selected_month:
+            contracts_qs = contracts_qs.filter(start_date__month=selected_month)
+        if selected_service_type:
+            contracts_qs = contracts_qs.filter(service_type=selected_service_type)
+        if selected_contract_type:
+            contracts_qs = contracts_qs.filter(contract_type=selected_contract_type)
+        if selected_region:
+            contracts_qs = contracts_qs.filter(deployment_site__city=selected_region)
+        if selected_status:
+            contracts_qs = contracts_qs.filter(status=selected_status)
+
+        invoice_qs = models.Invoice.objects.select_related("client", "contract", "site")
+        salary_qs = models.Salary.objects.select_related("employee")
+        deployment_qs = models.Deployment.objects.select_related("employee", "site", "contract")
+        if selected_year:
+            invoice_qs = invoice_qs.filter(invoice_date__year=selected_year)
+            salary_qs = salary_qs.filter(pay_period_start__year=selected_year)
+            deployment_qs = deployment_qs.filter(start_date__year=selected_year)
+        if selected_month:
+            invoice_qs = invoice_qs.filter(invoice_date__month=selected_month)
+            salary_qs = salary_qs.filter(pay_period_start__month=selected_month)
+            deployment_qs = deployment_qs.filter(start_date__month=selected_month)
+        if selected_status:
+            invoice_qs = invoice_qs.filter(status=selected_status)
+            deployment_qs = deployment_qs.filter(status=selected_status)
+        if selected_region:
+            invoice_qs = invoice_qs.filter(Q(site__city=selected_region) | Q(contract__deployment_site__city=selected_region))
+            deployment_qs = deployment_qs.filter(site__city=selected_region)
+        if selected_contract_type:
+            invoice_qs = invoice_qs.filter(contract__contract_type=selected_contract_type)
+            deployment_qs = deployment_qs.filter(contract__contract_type=selected_contract_type)
+        if selected_service_type:
+            invoice_qs = invoice_qs.filter(contract__service_type=selected_service_type)
+            deployment_qs = deployment_qs.filter(contract__service_type=selected_service_type)
+
         operations = {
             "clients": models.Client.objects.count(),
             "sites": models.Site.objects.count(),
@@ -305,6 +371,92 @@ def dashboard(request):
             },
             status=503,
         )
+    staff_cost = salary_qs.aggregate(total=Coalesce(Sum("gross_pay"), Decimal("0")))["total"]
+    service_revenue = invoice_qs.aggregate(total=Coalesce(Sum("total_amount"), Decimal("0")))["total"]
+    net_profit = service_revenue - staff_cost
+    profit_margin = percent_value(net_profit, service_revenue)
+    total_contracts = contracts_qs.count()
+    deployed_guards = deployment_qs.filter(status=models.StatusChoices.ACTIVE).values("employee_id").distinct().count()
+
+    region_contract_rows = list(
+        contracts_qs.values("deployment_site__city")
+        .annotate(total=Count("id"))
+        .order_by("-total", "deployment_site__city")[:5]
+    )
+    if not region_contract_rows:
+        region_contract_rows = [{"deployment_site__city": "Unassigned", "total": 0}]
+    max_region_contracts = max([row["total"] for row in region_contract_rows] or [1]) or 1
+    contract_region_tiles = [
+        {
+            "label": row["deployment_site__city"] or "Unassigned",
+            "value": row["total"],
+            "flex": max(1, round((row["total"] / max_region_contracts) * 8)),
+        }
+        for row in region_contract_rows
+    ]
+
+    regional_revenue_rows = list(
+        invoice_qs.values("site__city")
+        .annotate(total=Coalesce(Sum("total_amount"), Decimal("0")))
+        .order_by("-total", "site__city")[:5]
+    )
+    if not regional_revenue_rows:
+        regional_revenue_rows = [{"site__city": row["deployment_site__city"], "total": Decimal(row["total"])} for row in region_contract_rows]
+    total_regional_revenue = sum((row["total"] or Decimal("0")) for row in regional_revenue_rows) or Decimal("1")
+    profit_by_region = []
+    for row in regional_revenue_rows:
+        region_revenue = row["total"] or Decimal("0")
+        margin = profit_margin if service_revenue else percent_value(region_revenue, total_regional_revenue)
+        profit_by_region.append(
+            {
+                "label": row["site__city"] or "Unassigned",
+                "percent": margin,
+                "width": min(100, max(8, float(margin if margin > 0 else Decimal("0")))),
+            }
+        )
+
+    revenue_by_month = {
+        row["month"].date(): row["total"] or Decimal("0")
+        for row in invoice_qs.annotate(month=TruncMonth("invoice_date"))
+        .values("month")
+        .annotate(total=Coalesce(Sum("total_amount"), Decimal("0")))
+        .order_by("month")
+        if row["month"]
+    }
+    cost_by_month = {
+        row["month"].date(): row["total"] or Decimal("0")
+        for row in salary_qs.annotate(month=TruncMonth("pay_period_start"))
+        .values("month")
+        .annotate(total=Coalesce(Sum("gross_pay"), Decimal("0")))
+        .order_by("month")
+        if row["month"]
+    }
+    month_keys = sorted(set(revenue_by_month) | set(cost_by_month))[-8:]
+    if not month_keys:
+        today = timezone.localdate().replace(day=1)
+        month_keys = [today]
+    monthly_profit_labels = [month.strftime("%b") for month in month_keys]
+    monthly_profit_values = [float(revenue_by_month.get(month, Decimal("0")) - cost_by_month.get(month, Decimal("0"))) for month in month_keys]
+
+    year_options = [value.year for value in models.Contract.objects.dates("start_date", "year", order="DESC")]
+    if not year_options:
+        year_options = [timezone.localdate().year]
+    filter_options = {
+        "years": [(str(year), year) for year in year_options],
+        "months": [(str(index), calendar.month_name[index]) for index in range(1, 13)],
+        "client_types": models.Contract.ServiceType.choices,
+        "contract_types": models.Contract.ContractType.choices,
+        "regions": [(city, city) for city in models.Site.objects.exclude(city="").order_by("city").values_list("city", flat=True).distinct()],
+        "statuses": models.StatusChoices.choices,
+    }
+    filter_values = {
+        "year": selected_year,
+        "month": selected_month,
+        "client_type": selected_service_type,
+        "contract_type": selected_contract_type,
+        "region": selected_region,
+        "status": selected_status,
+    }
     department_totals = {
         "Operations": sum(operations.values()),
         "Human Resource": sum(human_resource.values()),
@@ -334,6 +486,10 @@ def dashboard(request):
         "financeValues": list(finance.values()),
         "cumulativeLabels": [row["label"] for row in cumulative_rows],
         "cumulativeValues": [row["cumulative"] for row in cumulative_rows],
+        "monthlyProfitLabels": monthly_profit_labels,
+        "monthlyProfitValues": monthly_profit_values,
+        "regionLabels": [row["label"] for row in profit_by_region],
+        "regionValues": [float(row["percent"]) for row in profit_by_region],
     }
     context = {
         "operations": operations,
@@ -344,6 +500,19 @@ def dashboard(request):
         "department_totals": department_totals,
         "cumulative_rows": cumulative_rows,
         "chart_data": chart_data,
+        "filter_options": filter_options,
+        "filter_values": filter_values,
+        "dashboard_kpis": [
+            {"value": compact_money(staff_cost), "label": "Total Staff Cost"},
+            {"value": f"{deployed_guards:,}", "label": "Total Guards Deployed"},
+            {"value": compact_money(service_revenue), "label": "Total Service Revenue"},
+            {"value": compact_money(net_profit), "label": "Net Profit"},
+            {"value": f"{total_contracts:,}", "label": "Total Contracts"},
+        ],
+        "profit_margin": profit_margin,
+        "profit_gauge_rotation": min(180, max(0, float(profit_margin) * 1.8)),
+        "profit_by_region": profit_by_region,
+        "contract_region_tiles": contract_region_tiles,
         "recent_incidents": models.Incident.objects.select_related("employee", "deployment")[:5],
         "open_invoices": models.Invoice.objects.select_related("client").exclude(status=models.StatusChoices.PAID)[:5],
         "model_groups": visible_groups,

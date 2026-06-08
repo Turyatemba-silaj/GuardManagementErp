@@ -1,382 +1,481 @@
 {% extends "core/base.html" %}
 
-{% block title %}Security Company Management System{% endblock %}
+{% block title %}Security Company Dashboard{% endblock %}
 {% block page_label %}Dashboard{% endblock %}
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js" defer></script>
 <style>
-    .dashboard-hero {
-        padding: 22px;
+    .power-dashboard {
+        --dash-green-950: #062814;
+        --dash-green-900: #0b3b20;
+        --dash-green-800: #10572d;
+        --dash-green-700: #14733a;
+        --dash-green-600: #15803d;
+        --dash-green-500: #22a455;
+        --dash-green-100: #dff3e6;
+        --dash-panel: #f7faf7;
+        --dash-line: #bed4c5;
         display: grid;
-        grid-template-columns: minmax(280px, .95fr) minmax(360px, 1.45fr);
-        gap: 20px;
-        align-items: start;
-        background:
-            linear-gradient(135deg, rgba(96, 165, 250, .18), rgba(37, 99, 235, .08) 56%, rgba(96, 165, 250, .14)),
-            #fff;
-    }
-    .dashboard-title {
-        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
         gap: 12px;
+        min-height: calc(100vh - 116px);
+        padding: 12px;
+        border-radius: 8px;
+        background:
+            radial-gradient(circle at 10% 8%, rgba(34, 164, 85, .28), transparent 34%),
+            linear-gradient(135deg, #0a2d18, #eef6ef 34%, #e8f2ea 100%);
+        box-shadow: inset 0 0 0 1px rgba(6, 40, 20, .12);
     }
-    .dashboard-title h1 {
-        max-width: 460px;
-        line-height: 1.08;
+    .dashboard-rail {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        padding-top: 72px;
     }
-    .dashboard-kicker {
-        width: fit-content;
-        display: inline-flex;
+    .rail-tab {
+        min-height: 56px;
+        display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 6px 10px;
-        border: 1px solid #bfdbfe;
-        border-radius: 999px;
-        background: #eff6ff;
-        color: #1d4ed8;
+        justify-content: center;
+        padding: 10px;
+        border: 1px solid rgba(255,255,255,.14);
+        border-radius: 8px;
+        background: rgba(6, 40, 20, .86);
+        color: #eaf7ee;
+        text-align: center;
         font-size: 12px;
         font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: .06em;
+        text-decoration: none;
+        box-shadow: 0 10px 22px rgba(6, 40, 20, .18);
     }
-    .dashboard-actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
+    .rail-tab.active {
+        background: linear-gradient(180deg, #f8fff9, #dcebe0);
+        color: var(--dash-green-950);
     }
-    .dashboard-actions .btn {
+    .dashboard-board {
         min-width: 0;
-        justify-content: flex-start;
-        min-height: 42px;
-    }
-    .ops-strip {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 10px;
-        margin-top: 6px;
     }
-    .ops-chip {
-        min-height: 66px;
-        padding: 12px;
-        border: 1px solid rgba(203, 213, 225, .9);
-        border-radius: 8px;
-        background: rgba(255,255,255,.72);
-    }
-    .ops-chip span {
-        display: block;
-        color: var(--sentinel-muted);
-        font-size: 11px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: .06em;
-    }
-    .ops-chip strong {
-        display: block;
-        margin-top: 5px;
-        color: var(--sentinel-ink);
-        font-size: 20px;
-        line-height: 1;
-    }
-    .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 14px;
-        margin-bottom: 18px;
-    }
-    .metric-card {
-        min-height: 112px;
-        padding: 15px;
-        display: grid;
-        align-content: space-between;
-        gap: 10px;
-        background: #fff;
-        border: 1px solid var(--sentinel-line);
-        border-radius: 8px;
-        box-shadow: 0 10px 26px rgba(15, 23, 42, .05);
-        border-top: 3px solid var(--sentinel-green);
-    }
-    .metric-card:nth-child(2) { border-top-color: var(--sentinel-blue); }
-    .metric-card:nth-child(3) { border-top-color: var(--sentinel-amber); }
-    .metric-card:nth-child(4) { border-top-color: #2563eb; }
-    .metric-card:nth-child(5) { border-top-color: var(--sentinel-red); }
-    .metric-card:nth-child(6) { border-top-color: #2563eb; }
-    .metric-card i {
-        width: 36px;
-        height: 36px;
-        display: inline-flex;
+    .dashboard-banner {
+        min-height: 52px;
+        display: flex;
         align-items: center;
         justify-content: center;
         border-radius: 8px;
-        color: #1d4ed8;
-        background: #eff6ff;
-        flex: 0 0 auto;
+        background: linear-gradient(180deg, rgba(6, 40, 20, .98), rgba(8, 54, 27, .96));
+        color: #fff;
+        text-align: center;
+        box-shadow: 0 12px 26px rgba(6, 40, 20, .22);
     }
-    .metric-card strong {
-        display: block;
-        font-size: 27px;
-        font-weight: 800;
-        line-height: 1;
-        color: var(--sentinel-ink);
+    .dashboard-banner h1 {
+        color: #fff;
+        font-size: 25px;
+        font-weight: 850;
+        text-shadow: 0 2px 6px rgba(0,0,0,.24);
     }
-    .metric-card span {
-        color: var(--sentinel-muted);
-        font-weight: 700;
-    }
-    .analytics-grid {
+    .filter-strip {
         display: grid;
-        grid-template-columns: minmax(300px, .82fr) minmax(420px, 1.38fr);
-        gap: 18px;
-        margin-bottom: 18px;
-    }
-    .chart-panel {
-        background: #fff;
-        border: 1px solid var(--sentinel-line);
+        grid-template-columns: repeat(6, minmax(118px, 1fr));
+        gap: 8px;
+        padding: 12px;
+        border: 1px solid var(--dash-line);
         border-radius: 8px;
-        box-shadow: 0 10px 26px rgba(15, 23, 42, .05);
-        min-width: 0;
+        background: rgba(247, 250, 247, .9);
+        box-shadow: 0 8px 18px rgba(15, 23, 42, .08);
+    }
+    .filter-field label {
+        display: block;
+        margin-bottom: 5px;
+        color: #111827;
+        font-size: 11px;
+        font-weight: 850;
+    }
+    .filter-field select {
+        width: 100%;
+        min-height: 34px;
+        padding: 5px 28px 5px 9px;
+        border: 1px solid #91b79c;
+        border-radius: 4px;
+        background: #0d4e29;
+        color: #fff;
+        font-weight: 750;
+        font-size: 12px;
+    }
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .kpi-card,
+    .visual-card {
+        border: 1px solid var(--dash-line);
+        border-radius: 8px;
+        background: linear-gradient(180deg, #fbfdfb, #edf5ef);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, .1);
         overflow: hidden;
     }
-    .chart-head {
-        min-height: 50px;
-        padding: 14px 16px;
-        border-bottom: 1px solid var(--sentinel-line);
-        display: flex;
+    .kpi-card {
+        min-height: 84px;
+        display: grid;
+        place-items: center;
+        padding: 12px 8px;
+        border-top: 6px solid var(--dash-green-900);
+        text-align: center;
+    }
+    .kpi-card strong {
+        display: block;
+        color: var(--dash-green-900);
+        font-size: 25px;
+        line-height: 1;
+        font-weight: 900;
+    }
+    .kpi-card span {
+        display: block;
+        margin-top: 7px;
+        color: #245037;
+        font-size: 13px;
+        font-weight: 850;
+    }
+    .visual-grid {
+        display: grid;
+        grid-template-columns: minmax(220px, .75fr) minmax(260px, .95fr) minmax(330px, 1.55fr);
+        grid-auto-rows: minmax(176px, auto);
+        gap: 10px;
+    }
+    .visual-card {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+    .visual-card.wide {
+        grid-column: span 2;
+    }
+    .visual-title {
+        padding: 9px 12px 4px;
+        color: #111827;
+        text-align: center;
+        font-size: 13px;
+        font-weight: 900;
+    }
+    .visual-body {
+        min-height: 0;
+        padding: 10px 14px 14px;
+        position: relative;
+    }
+    .region-bars {
+        display: grid;
+        gap: 11px;
+    }
+    .region-bar {
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr) 48px;
+        gap: 8px;
         align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-    }
-    .chart-head h2 {
-        font-size: 16px;
-    }
-    .chart-head span {
-        color: var(--sentinel-muted);
-        white-space: nowrap;
         font-size: 12px;
         font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: .05em;
     }
-    .chart-body {
-        position: relative;
-        min-height: 292px;
-        padding: 16px;
-    }
-    .chart-body canvas {
-        width: 100% !important;
-        height: 260px !important;
-        display: block;
-    }
-    .chart-stack {
-        display: grid;
-        gap: 18px;
-    }
-    .cumulative-list {
-        display: grid;
-        gap: 13px;
-        padding: 18px;
-    }
-    .cumulative-row {
-        display: grid;
-        grid-template-columns: 128px minmax(0, 1fr) 74px;
-        gap: 12px;
-        align-items: center;
-    }
-    .cumulative-row strong {
-        font-weight: 600;
-    }
-    .bar-track {
-        height: 16px;
-        background: #eef2f6;
-        border-radius: 999px;
+    .bar-shell {
+        height: 25px;
+        background: #d8e8dc;
+        border-radius: 2px;
         overflow: hidden;
     }
     .bar-fill {
         height: 100%;
-        min-width: 2px;
-        background: linear-gradient(90deg, var(--sentinel-green), var(--sentinel-blue));
-        border-radius: 999px;
+        min-width: 8px;
+        background: linear-gradient(90deg, #075c2a, #0b7a35);
     }
-    .cumulative-value {
-        text-align: right;
-        color: var(--sentinel-muted);
+    .gauge-wrap {
+        height: 100%;
+        min-height: 150px;
+        display: grid;
+        place-items: center;
     }
-    .module-section {
-        margin-top: 4px;
+    .gauge {
+        width: min(230px, 100%);
+        aspect-ratio: 2 / 1;
+        position: relative;
+        overflow: hidden;
     }
-    .module-card {
-        border-top: 3px solid var(--sentinel-blue);
+    .gauge::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 999px 999px 0 0;
+        background: conic-gradient(from 270deg, #11823c 0deg, #27a857 {{ profit_gauge_rotation }}deg, #dbe8df {{ profit_gauge_rotation }}deg 180deg, transparent 180deg);
     }
-    .module-card:nth-child(2) { border-top-color: var(--sentinel-green); }
-    .module-card:nth-child(3) { border-top-color: var(--sentinel-amber); }
-    .module-list a {
-        align-items: center;
+    .gauge::after {
+        content: "";
+        position: absolute;
+        left: 14%;
+        right: 14%;
+        bottom: -1px;
+        height: 72%;
+        border-radius: 999px 999px 0 0;
+        background: #f4faf5;
     }
-    .module-list .muted {
-        padding: 3px 8px;
-        border-radius: 999px;
-        background: #f8fafc;
+    .gauge-value {
+        position: absolute;
+        inset: auto 0 10px;
+        z-index: 1;
+        color: #12833d;
+        text-align: center;
+        font-size: 38px;
+        line-height: 1;
+        font-weight: 950;
+    }
+    .treemap {
+        min-height: 150px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+    }
+    .tree-tile {
+        min-width: 120px;
+        flex: var(--tile-flex) 1 130px;
+        display: grid;
+        align-content: space-between;
+        padding: 8px;
+        background: linear-gradient(135deg, #0d5f2c, #61c781);
+        color: #fff;
+        font-weight: 850;
+    }
+    .tree-tile:nth-child(2) { background: linear-gradient(135deg, #216c3e, #73bd87); }
+    .tree-tile:nth-child(3) { background: linear-gradient(135deg, #2a8a4e, #62ce7b); }
+    .tree-tile:nth-child(4) { background: linear-gradient(135deg, #0a4d25, #45a968); }
+    .tree-tile:nth-child(5) { background: linear-gradient(135deg, #17823e, #88d79a); }
+    .tree-tile span {
+        font-size: 12px;
+    }
+    .tree-tile strong {
+        font-size: 18px;
+    }
+    .profit-chart {
+        height: 230px;
+    }
+    .module-links {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .module-panel {
+        padding: 12px;
+        border: 1px solid var(--dash-line);
+        border-radius: 8px;
+        background: rgba(247, 250, 247, .9);
+    }
+    .module-panel h2 {
+        margin-bottom: 8px;
+        color: var(--dash-green-950);
+        font-size: 14px;
+        font-weight: 900;
+    }
+    .module-panel a {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 7px 0;
+        border-top: 1px solid #d8e7dc;
+        color: #244633;
+        text-decoration: none;
+        font-weight: 750;
+    }
+    .module-panel a:first-of-type {
+        border-top: 0;
+    }
+    .module-panel .muted {
+        color: #537663;
         font-size: 12px;
         font-weight: 800;
     }
-    @media (max-width: 1080px) {
-        .dashboard-hero,
-        .analytics-grid {
+    @media (max-width: 1180px) {
+        .power-dashboard {
             grid-template-columns: 1fr;
         }
-        .metric-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+        .dashboard-rail {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            padding-top: 0;
         }
-        .ops-strip {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+        .visual-grid,
+        .module-links {
+            grid-template-columns: 1fr;
+        }
+        .visual-card.wide {
+            grid-column: auto;
         }
     }
-    @media (max-width: 720px) {
-        .metric-grid,
-        .dashboard-actions,
-        .ops-strip {
+    @media (max-width: 820px) {
+        .filter-strip,
+        .kpi-grid,
+        .dashboard-rail {
             grid-template-columns: 1fr;
         }
-        .cumulative-row {
-            grid-template-columns: 1fr;
-            gap: 6px;
+        .power-dashboard {
+            padding: 8px;
         }
-        .cumulative-value {
-            text-align: left;
-        }
-        .dashboard-actions .btn {
-            width: 100%;
+        .dashboard-banner h1 {
+            font-size: 20px;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
+<section class="power-dashboard" aria-label="Security company dashboard">
+    <aside class="dashboard-rail" aria-label="Dashboard sections">
+        <a class="rail-tab active" href="{% url 'core:dashboard' %}">Overview</a>
+        <a class="rail-tab" href="{% url 'core:reports_center' %}">Revenue Trend</a>
+        <a class="rail-tab" href="{% url 'core:attendances' %}">Operations</a>
+        <a class="rail-tab" href="{% url 'core:record_list' 'incidents' %}">Incident And SLA</a>
+        <a class="rail-tab" href="{% url 'core:record_list' 'clients' %}">Client Insights</a>
+    </aside>
 
+    <div class="dashboard-board">
+        <header class="dashboard-banner">
+            <h1>Security Company Dashboard</h1>
+        </header>
 
-<section class="metric-grid" aria-label="Summary totals">
-    <article class="metric-card">
-        <i class="fa-solid fa-building-shield"></i>
-        <div>
-            <strong>{{ operations.sites }}</strong>
-            <span>Active sites</span>
-        </div>
-    </article>
-    <article class="metric-card">
-        <i class="fa-solid fa-user-shield"></i>
-        <div>
-            <strong>{{ human_resource.employees }}</strong>
-            <span>Employees</span>
-        </div>
-    </article>
-    <article class="metric-card">
-        <i class="fa-solid fa-user-plus"></i>
-        <div>
-            <strong>{{ recruitment_dashboard.applications }}</strong>
-            <span>Recruitment applications</span>
-        </div>
-    </article>
-    <article class="metric-card">
-        <i class="fa-solid fa-graduation-cap"></i>
-        <div>
-            <strong>{{ training_dashboard.successful }}</strong>
-            <span>Successful trainings</span>
-        </div>
-    </article>
-    <article class="metric-card">
-        <i class="fa-solid fa-triangle-exclamation"></i>
-        <div>
-            <strong>{{ operations.incidents }}</strong>
-            <span>Incidents</span>
-        </div>
-    </article>
-    <article class="metric-card">
-        <i class="fa-solid fa-file-invoice-dollar"></i>
-        <div>
-            <strong>{{ finance.invoices }}</strong>
-            <span>Invoices</span>
-        </div>
-    </article>
-</section>
+        <form class="filter-strip" method="get" aria-label="Dashboard filters">
+            <div class="filter-field">
+                <label for="year">Year</label>
+                <select id="year" name="year" onchange="this.form.submit()">
+                    <option value="">All</option>
+                    {% for value, label in filter_options.years %}
+                        <option value="{{ value }}" {% if filter_values.year == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="month">Month Name</label>
+                <select id="month" name="month" onchange="this.form.submit()">
+                    <option value="">All</option>
+                    {% for value, label in filter_options.months %}
+                        <option value="{{ value }}" {% if filter_values.month == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="client_type">Client Type</label>
+                <select id="client_type" name="client_type" onchange="this.form.submit()">
+                    <option value="">All</option>
+                    {% for value, label in filter_options.client_types %}
+                        <option value="{{ value }}" {% if filter_values.client_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="contract_type">Contract Type</label>
+                <select id="contract_type" name="contract_type" onchange="this.form.submit()">
+                    <option value="">All</option>
+                    {% for value, label in filter_options.contract_types %}
+                        <option value="{{ value }}" {% if filter_values.contract_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="region">Region</label>
+                <select id="region" name="region" onchange="this.form.submit()">
+                    <option value="">All</option>
+                    {% for value, label in filter_options.regions %}
+                        <option value="{{ value }}" {% if filter_values.region == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="status">Status</label>
+                <select id="status" name="status" onchange="this.form.submit()">
+                    <option value="">All</option>
+                    {% for value, label in filter_options.statuses %}
+                        <option value="{{ value }}" {% if filter_values.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
 
-<section class="analytics-grid" aria-label="Dashboard analytics">
-    <article class="chart-panel">
-        <div class="chart-head">
-            <h2>Department Mix</h2>
-            <span>Pie chart</span>
-        </div>
-        <div class="chart-body">
-            <canvas id="departmentPie" aria-label="Department record distribution"></canvas>
-        </div>
-    </article>
-    <div class="chart-stack">
-        <article class="chart-panel">
-            <div class="chart-head">
-                <h2>Operations Graph</h2>
-                <span>Live records</span>
-            </div>
-            <div class="chart-body">
-                <canvas id="operationsGraph" aria-label="Operations module records"></canvas>
-            </div>
-        </article>
-        <article class="chart-panel">
-            <div class="chart-head">
-                <h2>Department Cumulative Bar</h2>
-                <span>Total build-up</span>
-            </div>
-            <div class="cumulative-list">
-                {% for row in cumulative_rows %}
-                    <div class="cumulative-row">
-                        <strong>{{ row.label }}</strong>
-                        <div class="bar-track" aria-hidden="true">
-                            <div class="bar-fill" style="width: {{ row.percent }}%;"></div>
-                        </div>
-                        <span class="cumulative-value">{{ row.cumulative }} total</span>
+        <section class="kpi-grid" aria-label="Key performance indicators">
+            {% for kpi in dashboard_kpis %}
+                <article class="kpi-card">
+                    <div>
+                        <strong>{{ kpi.value }}</strong>
+                        <span>{{ kpi.label }}</span>
                     </div>
-                {% endfor %}
-            </div>
-            <div class="chart-body">
-                <canvas id="cumulativeBar" aria-label="Cumulative department totals"></canvas>
-            </div>
-        </article>
+                </article>
+            {% endfor %}
+        </section>
+
+        <section class="visual-grid" aria-label="Performance visuals">
+            <article class="visual-card">
+                <h2 class="visual-title">Profit Margin by Region</h2>
+                <div class="visual-body">
+                    <div class="region-bars">
+                        {% for row in profit_by_region %}
+                            <div class="region-bar">
+                                <span>{{ row.label }}</span>
+                                <div class="bar-shell" aria-hidden="true">
+                                    <div class="bar-fill" style="width: {{ row.width }}%;"></div>
+                                </div>
+                                <strong>{{ row.percent }}%</strong>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </article>
+
+            <article class="visual-card">
+                <h2 class="visual-title">Profit Margin</h2>
+                <div class="visual-body">
+                    <div class="gauge-wrap">
+                        <div class="gauge" aria-label="Profit margin {{ profit_margin }} percent">
+                            <div class="gauge-value">{{ profit_margin }}%</div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <article class="visual-card">
+                <h2 class="visual-title">Total Contracts by Region</h2>
+                <div class="visual-body">
+                    <div class="treemap">
+                        {% for tile in contract_region_tiles %}
+                            <div class="tree-tile" style="--tile-flex: {{ tile.flex }};">
+                                <span>{{ tile.label }}</span>
+                                <strong>{{ tile.value }}</strong>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </article>
+
+            <article class="visual-card wide">
+                <h2 class="visual-title">Net Profit by Month Name</h2>
+                <div class="visual-body">
+                    <canvas id="monthlyProfitChart" class="profit-chart" aria-label="Net profit by month"></canvas>
+                </div>
+            </article>
+
+            <article class="visual-card">
+                <h2 class="visual-title">Operations Snapshot</h2>
+                <div class="visual-body">
+                    <canvas id="operationsChart" class="profit-chart" aria-label="Operations records"></canvas>
+                </div>
+            </article>
+        </section>
+
+        <section class="module-links" aria-label="Management modules">
+            {% for department, configs in model_groups.items %}
+                <article class="module-panel">
+                    <h2>{{ department }}</h2>
+                    {% for slug, config in configs|slice:":5" %}
+                        <a href="{% if slug == 'guard-schedules' %}{% url 'core:attendances' %}{% else %}{% url 'core:record_list' slug %}{% endif %}">
+                            <span>{{ config.title }}</span>
+                            <span class="muted">Open</span>
+                        </a>
+                    {% endfor %}
+                </article>
+            {% endfor %}
+        </section>
     </div>
-</section>
-
-<section class="analytics-grid" aria-label="Resource and finance graphs">
-    <article class="chart-panel">
-        <div class="chart-head">
-            <h2>Human Resource Graph</h2>
-            <span>Workforce activity</span>
-        </div>
-        <div class="chart-body">
-            <canvas id="hrGraph" aria-label="Human resource module records"></canvas>
-        </div>
-    </article>
-    <article class="chart-panel">
-        <div class="chart-head">
-            <h2>Finance Graph</h2>
-            <span>Commercial activity</span>
-        </div>
-        <div class="chart-body">
-            <canvas id="financeGraph" aria-label="Finance module records"></canvas>
-        </div>
-    </article>
-</section>
-
-<section class="card-grid module-section">
-    {% for department, configs in model_groups.items %}
-        <article class="module-card">
-            <h2>{{ department }}</h2>
-            <div class="module-list">
-                {% for slug, config in configs %}
-                    <a href="{% if slug == 'guard-schedules' %}{% url 'core:attendances' %}{% else %}{% url 'core:record_list' slug %}{% endif %}">
-                        <span>{{ config.title }}</span>
-                        <span class="muted">Manage</span>
-                    </a>
-                {% endfor %}
-            </div>
-        </article>
-    {% endfor %}
 </section>
 
 {{ chart_data|json_script:"dashboard-chart-data" }}
@@ -387,125 +486,90 @@
             return;
         }
         var data = JSON.parse(chartElement.textContent);
-        var palette = ["#2563eb", "#2563eb", "#2563eb", "#667085", "#2563eb", "#2563eb"];
-        var gridColor = "rgba(102, 112, 133, .18)";
-        var labelColor = "#243244";
+        var gridColor = "rgba(15, 87, 45, .16)";
+        var green = "#0f7d37";
+        var greenSoft = "rgba(15, 125, 55, .24)";
 
-        if (window.ChartDataLabels) {
-            Chart.register(ChartDataLabels);
-        }
-        Chart.defaults.font.family = '"Helvetica Neue", Arial, sans-serif';
-        Chart.defaults.color = labelColor;
-        Chart.defaults.plugins.legend.labels.boxWidth = 10;
-        Chart.defaults.plugins.legend.labels.boxHeight = 10;
+        Chart.defaults.font.family = 'Inter, "Segoe UI", Arial, sans-serif';
+        Chart.defaults.color = "#1f3328";
+        Chart.defaults.plugins.legend.display = false;
 
-        function makeBarChart(id, labels, values, label, color) {
-            var node = document.getElementById(id);
-            if (!node) {
-                return;
+        function moneyLabel(value) {
+            var sign = value < 0 ? "-" : "";
+            var abs = Math.abs(value);
+            if (abs >= 1000000) {
+                return sign + "$" + (abs / 1000000).toFixed(1) + "M";
             }
-            new Chart(node, {
-                type: "bar",
+            if (abs >= 1000) {
+                return sign + "$" + (abs / 1000).toFixed(0) + "K";
+            }
+            return sign + "$" + abs.toFixed(0);
+        }
+
+        var monthlyNode = document.getElementById("monthlyProfitChart");
+        if (monthlyNode) {
+            new Chart(monthlyNode, {
+                type: "line",
                 data: {
-                    labels: labels,
+                    labels: data.monthlyProfitLabels,
                     datasets: [{
-                        label: label,
-                        data: values,
-                        backgroundColor: color,
-                        borderRadius: 4,
-                        maxBarThickness: 34
+                        data: data.monthlyProfitValues,
+                        borderColor: green,
+                        backgroundColor: greenSoft,
+                        fill: true,
+                        tension: .35,
+                        pointRadius: 4,
+                        pointBackgroundColor: "#0a5229",
+                        pointBorderWidth: 0
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        datalabels: {
-                            anchor: "end",
-                            align: "top",
-                            color: labelColor,
-                            font: { weight: "700" },
-                            formatter: function (value) {
-                                return value;
-                            }
-                        }
-                    },
                     scales: {
                         x: { grid: { display: false } },
-                        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } }
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: gridColor },
+                            ticks: { callback: moneyLabel }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    return "Net profit: " + moneyLabel(context.parsed.y);
+                                }
+                            }
+                        }
                     }
                 }
             });
         }
 
-        new Chart(document.getElementById("departmentPie"), {
-            type: "doughnut",
-            data: {
-                labels: data.departmentLabels,
-                datasets: [{
-                    data: data.departmentValues,
-                    backgroundColor: palette.slice(0, 3),
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: "58%",
-                plugins: {
-                    legend: { position: "bottom" },
-                    datalabels: {
-                        color: "#fff",
-                        font: { weight: "700" },
-                        formatter: function (value, context) {
-                            var values = context.chart.data.datasets[0].data;
-                            var total = values.reduce(function (sum, item) { return sum + item; }, 0);
-                            if (!total || !value) {
-                                return "";
-                            }
-                            return value + " (" + Math.round((value / total) * 100) + "%)";
-                        }
-                    }
-                }
-            }
-        });
-
-        makeBarChart("operationsGraph", data.operationsLabels, data.operationsValues, "Records", "#2563eb");
-        makeBarChart("hrGraph", data.hrLabels, data.hrValues, "Records", "#2563eb");
-        makeBarChart("financeGraph", data.financeLabels, data.financeValues, "Records", "#2563eb");
-
-        new Chart(document.getElementById("cumulativeBar"), {
-            type: "bar",
-            data: {
-                labels: data.cumulativeLabels,
-                datasets: [{
-                    label: "Cumulative records",
-                    data: data.cumulativeValues,
-                    backgroundColor: ["#2563eb", "#2563eb", "#2563eb"],
-                    borderRadius: 4,
-                    maxBarThickness: 38
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    datalabels: {
-                        anchor: "end",
-                        align: "top",
-                        color: labelColor,
-                        font: { weight: "700" },
-                        formatter: function (value) {
-                            return value;
-                        }
-                    }
+        var operationsNode = document.getElementById("operationsChart");
+        if (operationsNode) {
+            new Chart(operationsNode, {
+                type: "bar",
+                data: {
+                    labels: data.operationsLabels,
+                    datasets: [{
+                        data: data.operationsValues,
+                        backgroundColor: ["#075c2a", "#0d7434", "#188947", "#32a35c", "#64c27a", "#95d8a5"],
+                        borderRadius: 4,
+                        maxBarThickness: 32
+                    }]
                 },
-                scales: {
-                    x: { grid: { display: false } },
-                    y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 0 } },
+                        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: gridColor } }
+                    }
                 }
-            }
-        });
+            });
+        }
     });
 </script>
 {% endblock %}
