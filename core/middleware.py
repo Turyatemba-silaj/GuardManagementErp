@@ -12,6 +12,31 @@ from .auth_backends import ensure_superuser
 from .db_runtime import ensure_writable_sqlite_database
 
 
+class SecurityHeadersMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        response.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        response.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+        response.setdefault(
+            "Content-Security-Policy",
+            (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; "
+                "font-src 'self' data:; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'; "
+                "base-uri 'self'; "
+                "form-action 'self'"
+            ),
+        )
+        return response
+
+
 class SaaSTenantMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

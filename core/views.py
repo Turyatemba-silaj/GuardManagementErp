@@ -7,6 +7,7 @@ from io import BytesIO
 import json
 import os
 import re
+import secrets
 import uuid
 import zipfile
 from xml.sax.saxutils import escape as xml_escape
@@ -798,41 +799,49 @@ def healthz(request):
         tenant_count = models.TenantOrganization.objects.count()
     except Exception as error:
         db_error = str(error)
-    return JsonResponse(
-        {
-            "status": "ok" if db_ok else "degraded",
-            "debug": settings.DEBUG,
-            "database": "ok" if db_ok else "error",
-            "database_error": db_error,
-            "database_writable": db_writable,
-            "database_write_error": db_write_error,
-            "database_engine": settings.DATABASES["default"].get("ENGINE", ""),
-            "database_name": settings.DATABASES["default"].get("NAME", ""),
-            "database_host_configured": bool(settings.DATABASES["default"].get("HOST", "")),
-            "database_password_configured": bool(settings.DATABASES["default"].get("PASSWORD", "")),
-            "database_url_configured": bool(os.environ.get("DATABASE_URL")),
-            "postgres_url_configured": any(
-                bool(os.environ.get(name))
-                for name in ("POSTGRES_URL", "POSTGRES_URL_NON_POOLING", "POSTGRES_PRISMA_URL")
-            ),
-            "django_use_sqlite": os.environ.get("DJANGO_USE_SQLITE", ""),
-            "is_vercel": bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL")),
-            "database_runtime_note": getattr(settings, "DATABASE_RUNTIME_NOTE", ""),
-            "session_engine": getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"),
-            "permanent_login": getattr(settings, "ERP_PERMANENT_LOGIN", False),
-            "permanent_login_username": getattr(settings, "ERP_PERMANENT_LOGIN_USERNAME", ""),
-            "saas_platform_name": getattr(settings, "SAAS_PLATFORM_NAME", ""),
-            "saas_enforce_tenant_access": getattr(settings, "SAAS_ENFORCE_TENANT_ACCESS", False),
-            "tenant_count": tenant_count,
-            "env_superuser_username_configured": bool(env_username),
-            "env_superuser_password_configured": bool(os.environ.get("DJANGO_SUPERUSER_PASSWORD")),
-            "env_superuser_username": env_username,
-            "env_superuser_user_exists": env_user_exists,
-            "env_superuser_user_active": env_user_active,
-            "allowed_hosts": settings.ALLOWED_HOSTS,
-        },
-        status=200 if db_ok else 503,
+    payload = {
+        "status": "ok" if db_ok else "degraded",
+        "database": "ok" if db_ok else "error",
+        "database_writable": db_writable,
+    }
+    health_token = os.environ.get("DJANGO_HEALTHCHECK_TOKEN", "")
+    supplied_token = request.headers.get("X-Healthcheck-Token", "") or request.GET.get("token", "")
+    can_view_details = bool(
+        request.user.is_authenticated
+        and request.user.is_staff
+        or health_token
+        and supplied_token
+        and secrets.compare_digest(supplied_token, health_token)
     )
+    if can_view_details:
+        payload.update(
+            {
+                "debug": settings.DEBUG,
+                "database_error": db_error,
+                "database_write_error": db_write_error,
+                "database_engine": settings.DATABASES["default"].get("ENGINE", ""),
+                "database_host_configured": bool(settings.DATABASES["default"].get("HOST", "")),
+                "database_password_configured": bool(settings.DATABASES["default"].get("PASSWORD", "")),
+                "database_url_configured": bool(os.environ.get("DATABASE_URL")),
+                "postgres_url_configured": any(
+                    bool(os.environ.get(name))
+                    for name in ("POSTGRES_URL", "POSTGRES_URL_NON_POOLING", "POSTGRES_PRISMA_URL")
+                ),
+                "django_use_sqlite": os.environ.get("DJANGO_USE_SQLITE", ""),
+                "is_vercel": bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL")),
+                "database_runtime_note": getattr(settings, "DATABASE_RUNTIME_NOTE", ""),
+                "session_engine": getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"),
+                "permanent_login": getattr(settings, "ERP_PERMANENT_LOGIN", False),
+                "saas_platform_name": getattr(settings, "SAAS_PLATFORM_NAME", ""),
+                "saas_enforce_tenant_access": getattr(settings, "SAAS_ENFORCE_TENANT_ACCESS", False),
+                "tenant_count": tenant_count,
+                "env_superuser_username_configured": bool(env_username),
+                "env_superuser_password_configured": bool(os.environ.get("DJANGO_SUPERUSER_PASSWORD")),
+                "env_superuser_user_exists": env_user_exists,
+                "env_superuser_user_active": env_user_active,
+            }
+        )
+    return JsonResponse(payload, status=200 if db_ok else 503)
 
 
 @csrf_exempt

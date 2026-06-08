@@ -17,6 +17,8 @@ import warnings
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse, unquote
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 IS_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL"))
@@ -222,24 +224,26 @@ def database_config():
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret.
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY") or "dev-only-insecure-change-me"
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool("DJANGO_DEBUG", default=not IS_VERCEL)
 
-DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver", ".vercel.app", *vercel_hosts()]
+# SECURITY WARNING: keep the secret key used in production secret.
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "dev-only-insecure-change-me"
+    else:
+        raise ImproperlyConfigured("DJANGO_SECRET_KEY or SECRET_KEY must be set when DJANGO_DEBUG is false.")
+if not DEBUG and SECRET_KEY == "dev-only-insecure-change-me":
+    raise ImproperlyConfigured("Refusing to start production with the development SECRET_KEY.")
+
+DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+if IS_VERCEL:
+    DEFAULT_ALLOWED_HOSTS.extend(vercel_hosts())
 ALLOWED_HOSTS = sorted(set(DEFAULT_ALLOWED_HOSTS + env_list("DJANGO_ALLOWED_HOSTS")))
 CSRF_TRUSTED_ORIGINS = sorted(
-    set(["https://*.vercel.app", *https_origins(ALLOWED_HOSTS), *env_list("DJANGO_CSRF_TRUSTED_ORIGINS")])
+    set([*https_origins(ALLOWED_HOSTS), *env_list("DJANGO_CSRF_TRUSTED_ORIGINS")])
 )
-
-if not DEBUG and SECRET_KEY == "dev-only-insecure-change-me":
-    warnings.warn(
-        "DJANGO_SECRET_KEY or SECRET_KEY is not set while DJANGO_DEBUG is false. "
-        "Set a long random secret in the deployment environment before using this app with real data.",
-        RuntimeWarning,
-    )
 
 
 # Application definition
@@ -262,6 +266,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.middleware.SecurityHeadersMiddleware',
     'core.middleware.PermanentLoginMiddleware',
     'core.middleware.LoginRequiredMiddleware',
     'core.middleware.SaaSTenantMiddleware',
@@ -320,6 +325,8 @@ AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
 ]
 
+DJANGO_ENABLE_ENV_SUPERUSER = env_bool("DJANGO_ENABLE_ENV_SUPERUSER", default=DEBUG)
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -358,7 +365,9 @@ ERP_PERMANENT_LOGIN_USERNAME = os.environ.get("ERP_PERMANENT_LOGIN_USERNAME") or
 ERP_PERMANENT_LOGIN_PASSWORD = os.environ.get("ERP_PERMANENT_LOGIN_PASSWORD") or os.environ.get("DJANGO_SUPERUSER_PASSWORD") or ""
 ERP_PERMANENT_LOGIN_EMAIL = os.environ.get("ERP_PERMANENT_LOGIN_EMAIL") or os.environ.get("DJANGO_SUPERUSER_EMAIL") or ""
 ERP_PERMANENT_LOGIN_AGE = int(os.environ.get("ERP_PERMANENT_LOGIN_AGE", 10 * 365 * 24 * 60 * 60))
-SESSION_COOKIE_AGE = ERP_PERMANENT_LOGIN_AGE
+if ERP_PERMANENT_LOGIN and not DEBUG and not env_bool("DJANGO_ALLOW_INSECURE_PERMANENT_LOGIN", default=False):
+    raise ImproperlyConfigured("ERP_PERMANENT_LOGIN is not allowed in production.")
+SESSION_COOKIE_AGE = ERP_PERMANENT_LOGIN_AGE if ERP_PERMANENT_LOGIN else int(os.environ.get("DJANGO_SESSION_COOKIE_AGE", 8 * 60 * 60))
 SESSION_SAVE_EVERY_REQUEST = ERP_PERMANENT_LOGIN
 if IS_VERCEL:
     SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"

@@ -150,13 +150,23 @@ class DatabaseRuntimeTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["database_writable"])
+        self.assertNotIn("database_engine", response.json())
         with connection.cursor() as cursor:
             table_names = connection.introspection.table_names(cursor)
         self.assertNotIn("core_healthcheck_write", table_names)
         self.assertNotIn("healthcheck_write_probe", table_names)
 
+    def test_healthz_details_require_token(self):
+        with patch.dict(os.environ, {"DJANGO_HEALTHCHECK_TOKEN": "health-secret"}, clear=False):
+            response = self.client.get(reverse("core:healthz"), HTTP_X_HEALTHCHECK_TOKEN="health-secret")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("database_engine", response.json())
+        self.assertNotIn("database_name", response.json())
+
 
 class EnvSuperuserBackendTests(TestCase):
+    @override_settings(DJANGO_ENABLE_ENV_SUPERUSER=True)
     def test_env_superuser_is_created_when_credentials_match(self):
         with patch.dict(
             os.environ,
@@ -175,6 +185,21 @@ class EnvSuperuserBackendTests(TestCase):
         self.assertTrue(user.is_superuser)
         self.assertTrue(user.check_password("temporary-pass"))
 
+    @override_settings(DJANGO_ENABLE_ENV_SUPERUSER=False)
+    def test_env_superuser_is_disabled_unless_enabled(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DJANGO_SUPERUSER_USERNAME": "deploy-admin",
+                "DJANGO_SUPERUSER_PASSWORD": "temporary-pass",
+            },
+            clear=False,
+        ):
+            user = authenticate(username="deploy-admin", password="temporary-pass")
+
+        self.assertIsNone(user)
+
+    @override_settings(DJANGO_ENABLE_ENV_SUPERUSER=True)
     def test_env_superuser_can_login_with_configured_email(self):
         with patch.dict(
             os.environ,
@@ -190,7 +215,11 @@ class EnvSuperuserBackendTests(TestCase):
         self.assertIsNotNone(user)
         self.assertEqual(user.username, "deploy-admin")
 
-    @override_settings(DISABLE_LAST_LOGIN_UPDATE=True, SESSION_ENGINE="django.contrib.sessions.backends.signed_cookies")
+    @override_settings(
+        DISABLE_LAST_LOGIN_UPDATE=True,
+        SESSION_ENGINE="django.contrib.sessions.backends.signed_cookies",
+        DJANGO_ENABLE_ENV_SUPERUSER=True,
+    )
     def test_login_view_succeeds_when_database_login_writes_are_disabled(self):
         with patch.dict(
             os.environ,

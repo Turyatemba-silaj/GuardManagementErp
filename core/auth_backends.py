@@ -1,6 +1,7 @@
 import os
 import secrets
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 
@@ -38,6 +39,8 @@ def ensure_superuser(username=None, password=None, email=""):
 
 class EnvSuperuserBackend(ModelBackend):
     def authenticate(self, request, username=None, password=None, **kwargs):
+        if not getattr(settings, "DJANGO_ENABLE_ENV_SUPERUSER", False):
+            return None
         env_username = os.environ.get("DJANGO_SUPERUSER_USERNAME")
         env_password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
         env_email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "")

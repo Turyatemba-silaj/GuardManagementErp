@@ -17,12 +17,10 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.contrib.staticfiles.views import serve as serve_static
 from django.urls import include, path, re_path
 from core.auth_views import DatabaseSafeLoginView, HomeRedirectAdminLoginView
 
 urlpatterns = [
-    re_path(r"^static/(?P<path>.*)$", serve_static, name="static"),
     path('', include('core.urls')),
     path('accounts/login/', DatabaseSafeLoginView.as_view(), name='login'),
     path('accounts/', include('django.contrib.auth.urls')),
@@ -31,4 +29,7 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
+    from django.contrib.staticfiles.views import serve as serve_static
+
+    urlpatterns.insert(0, re_path(r"^static/(?P<path>.*)$", serve_static, name="static"))
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
