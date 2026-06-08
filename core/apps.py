@@ -7,6 +7,7 @@ class CoreConfig(AppConfig):
     verbose_name = "ERP Modules"
 
     def ready(self):
+        from . import checks  # noqa: F401
         from .db_runtime import ensure_writable_sqlite_database
 
         ensure_writable_sqlite_database()

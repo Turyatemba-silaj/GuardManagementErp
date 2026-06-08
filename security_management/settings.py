@@ -17,8 +17,6 @@ import warnings
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse, unquote
 
-from django.core.exceptions import ImproperlyConfigured
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 IS_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL"))
@@ -230,12 +228,19 @@ DEBUG = env_bool("DJANGO_DEBUG", default=not IS_VERCEL)
 # SECURITY WARNING: keep the secret key used in production secret.
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
-    if DEBUG:
-        SECRET_KEY = "dev-only-insecure-change-me"
-    else:
-        raise ImproperlyConfigured("DJANGO_SECRET_KEY or SECRET_KEY must be set when DJANGO_DEBUG is false.")
-if not DEBUG and SECRET_KEY == "dev-only-insecure-change-me":
-    raise ImproperlyConfigured("Refusing to start production with the development SECRET_KEY.")
+    SECRET_KEY = "dev-only-insecure-change-me"
+    if not DEBUG:
+        warnings.warn(
+            "DJANGO_SECRET_KEY or SECRET_KEY is not set while DJANGO_DEBUG is false. "
+            "The app started with an insecure fallback key so Vercel can show diagnostics; "
+            "set a long random secret immediately.",
+            RuntimeWarning,
+        )
+elif not DEBUG and SECRET_KEY == "dev-only-insecure-change-me":
+    warnings.warn(
+        "Production is using the development SECRET_KEY. Set DJANGO_SECRET_KEY or SECRET_KEY to a long random value.",
+        RuntimeWarning,
+    )
 
 DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 if IS_VERCEL:
@@ -366,7 +371,10 @@ ERP_PERMANENT_LOGIN_PASSWORD = os.environ.get("ERP_PERMANENT_LOGIN_PASSWORD") or
 ERP_PERMANENT_LOGIN_EMAIL = os.environ.get("ERP_PERMANENT_LOGIN_EMAIL") or os.environ.get("DJANGO_SUPERUSER_EMAIL") or ""
 ERP_PERMANENT_LOGIN_AGE = int(os.environ.get("ERP_PERMANENT_LOGIN_AGE", 10 * 365 * 24 * 60 * 60))
 if ERP_PERMANENT_LOGIN and not DEBUG and not env_bool("DJANGO_ALLOW_INSECURE_PERMANENT_LOGIN", default=False):
-    raise ImproperlyConfigured("ERP_PERMANENT_LOGIN is not allowed in production.")
+    warnings.warn(
+        "ERP_PERMANENT_LOGIN is enabled in production. Disable it immediately.",
+        RuntimeWarning,
+    )
 SESSION_COOKIE_AGE = ERP_PERMANENT_LOGIN_AGE if ERP_PERMANENT_LOGIN else int(os.environ.get("DJANGO_SESSION_COOKIE_AGE", 8 * 60 * 60))
 SESSION_SAVE_EVERY_REQUEST = ERP_PERMANENT_LOGIN
 if IS_VERCEL:
