@@ -1036,6 +1036,31 @@ class FinanceCalculationTests(TestCase):
         self.assertEqual(invoice.balance_amount, Decimal("0.00"))
         self.assertEqual(invoice.status, StatusChoices.PAID)
 
+    def test_dashboard_accepts_date_month_aggregates(self):
+        client = Client.objects.create(
+            client_name="Dashboard Date Client",
+            contact_person="Jane",
+            phone_number="0711111113",
+            contract_start_date="2026-01-01",
+        )
+        Invoice.objects.create(
+            client=client,
+            invoice_number="INV-DASH-DATE",
+            invoice_date="2026-06-09",
+            due_date="2026-06-30",
+            total_amount=Decimal("1000000.00"),
+        )
+        Salary.objects.create(
+            employee=self.employee,
+            pay_period_start="2026-06-01",
+            pay_period_end="2026-06-30",
+            basic_salary=Decimal("500000.00"),
+        )
+
+        response = self.client.get(reverse("core:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+
     def test_invoice_total_is_recalculated_from_contract_terms(self):
         client = Client.objects.create(
             client_name="Contract Billing Client",

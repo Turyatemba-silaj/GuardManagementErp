@@ -141,6 +141,15 @@ def percent_value(numerator, denominator):
     return ((numerator / denominator) * Decimal("100")).quantize(Decimal("0.1"))
 
 
+def aggregate_month_key(value):
+    if not value:
+        return None
+    to_date = getattr(value, "date", None)
+    if callable(to_date):
+        value = to_date()
+    return value.replace(day=1)
+
+
 def column_value(obj, column):
     display_method = getattr(obj, f"get_{column}_display", None)
     if callable(display_method):
@@ -416,7 +425,7 @@ def dashboard(request):
         )
 
     revenue_by_month = {
-        row["month"].date(): row["total"] or Decimal("0")
+        aggregate_month_key(row["month"]): row["total"] or Decimal("0")
         for row in invoice_qs.annotate(month=TruncMonth("invoice_date"))
         .values("month")
         .annotate(total=Coalesce(Sum("total_amount"), Decimal("0")))
@@ -424,7 +433,7 @@ def dashboard(request):
         if row["month"]
     }
     cost_by_month = {
-        row["month"].date(): row["total"] or Decimal("0")
+        aggregate_month_key(row["month"]): row["total"] or Decimal("0")
         for row in salary_qs.annotate(month=TruncMonth("pay_period_start"))
         .values("month")
         .annotate(total=Coalesce(Sum("gross_pay"), Decimal("0")))
