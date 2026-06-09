@@ -1,6 +1,7 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
@@ -14,6 +15,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         today = timezone.localdate()
 
+        self.create_saas_records()
         roles = self.create_roles()
         positions = self.create_positions()
         clients = self.create_clients(today)
@@ -55,6 +57,63 @@ class Command(BaseCommand):
         for title, count in counts:
             self.stdout.write(f"{title}: {count}")
         self.stdout.write(self.style.SUCCESS("Dummy data seed complete."))
+
+    def create_saas_records(self):
+        User = get_user_model()
+        plans = []
+        for index in range(1, 6):
+            plan, _created = models.SubscriptionPlan.objects.update_or_create(
+                slug=f"demo-plan-{index}",
+                defaults={
+                    "name": f"Demo Plan {index}",
+                    "monthly_price": Decimal("100000.00") * index,
+                    "user_limit": 10 * index,
+                    "site_limit": 25 * index,
+                    "is_active": True,
+                    "features": {
+                        "operations": True,
+                        "human_resources": index >= 2,
+                        "finance": index >= 3,
+                        "reports": True,
+                    },
+                },
+            )
+            plans.append(plan)
+
+        for index, plan in enumerate(plans, start=1):
+            user, created = User.objects.get_or_create(
+                username=f"demo_tenant_owner_{index}",
+                defaults={
+                    "email": f"tenant-owner-{index}@demo.test",
+                    "first_name": f"Tenant{index}",
+                    "last_name": "Owner",
+                    "is_active": True,
+                    "is_staff": index == 1,
+                },
+            )
+            if created:
+                user.set_password("DemoPass123!")
+                user.save(update_fields=["password"])
+            organization, _created = models.TenantOrganization.objects.update_or_create(
+                slug=f"demo-tenant-{index}",
+                defaults={
+                    "name": f"Demo Tenant {index}",
+                    "primary_domain": f"tenant-{index}.demo.test",
+                    "owner": user,
+                    "plan": plan,
+                    "status": models.TenantOrganization.Status.ACTIVE,
+                    "trial_ends_at": None,
+                    "subscription_ends_at": None,
+                },
+            )
+            models.TenantMembership.objects.update_or_create(
+                organization=organization,
+                user=user,
+                defaults={
+                    "role": models.TenantMembership.Role.OWNER,
+                    "is_active": True,
+                },
+            )
 
     def create_roles(self):
         data = [
@@ -335,7 +394,13 @@ class Command(BaseCommand):
                     "employee": deployment.employee,
                     "description": "Demo incident description for testing.",
                     "location": f"Demo location {index}",
-                    "severity_level": ["Low", "Medium", "Low", "High", "Medium"][index - 1],
+                    "severity_level": [
+                        models.Incident.SeverityLevel.LOW,
+                        models.Incident.SeverityLevel.MEDIUM,
+                        models.Incident.SeverityLevel.LOW,
+                        models.Incident.SeverityLevel.HIGH,
+                        models.Incident.SeverityLevel.MEDIUM,
+                    ][index - 1],
                     "reported_by": employees[index - 1],
                     "status": models.StatusChoices.PENDING,
                 },
@@ -501,10 +566,10 @@ class Command(BaseCommand):
         attendance_records = []
         for index, schedule in enumerate(schedules):
             attendance, _created = models.Attendance.objects.update_or_create(
-                employee=employees[index],
-                date=today - timedelta(days=index),
+                employee=schedule.employee,
+                date=schedule.shift_date,
                 site=schedule.site,
-                shift=shifts[index],
+                shift=schedule.shift,
                 defaults={
                     "schedule": schedule,
                     "time_in": time(8, 0),
@@ -651,7 +716,7 @@ class Command(BaseCommand):
                     "invoice_date": today - timedelta(days=index),
                     "due_date": today + timedelta(days=30),
                     "total_amount": Decimal("1500000.00") + Decimal(index * 100000),
-                    "paid_amount": Decimal("500000.00"),
+                    "paid_amount": Decimal("0.00"),
                     "status": models.StatusChoices.UNPAID,
                 },
             )
