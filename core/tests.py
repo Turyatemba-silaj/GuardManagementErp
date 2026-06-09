@@ -128,6 +128,31 @@ class DatabaseRuntimeTests(TestCase):
         self.assertEqual(config["NAME"].replace("\\", "/"), "/tmp/erp.sqlite3")
         self.assertEqual(config["HOST"], "")
 
+    def test_local_production_mode_without_postgres_env_uses_sqlite(self):
+        with (
+            patch.object(project_settings, "IS_VERCEL", False),
+            patch.dict(
+                os.environ,
+                {
+                    "DJANGO_DEBUG": "False",
+                    "DATABASE_URL": "",
+                    "POSTGRES_URL": "",
+                    "POSTGRES_URL_NON_POOLING": "",
+                    "POSTGRES_PRISMA_URL": "",
+                    "DJANGO_DB_HOST": "",
+                    "DJANGO_DB_PASSWORD": "",
+                    "DJANGO_DB_USER": "",
+                    "DJANGO_DB_PORT": "",
+                },
+                clear=False,
+            ),
+        ):
+            config = project_settings.database_config()
+
+        self.assertEqual(config["ENGINE"], "django.db.backends.sqlite3")
+        self.assertTrue(str(config["NAME"]).endswith("db.sqlite3"))
+        self.assertEqual(config["HOST"], "")
+
     def test_vercel_sqlite_fallback_replaces_stale_tmp_copy(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bundled_db = Path(temp_dir) / "db.sqlite3"

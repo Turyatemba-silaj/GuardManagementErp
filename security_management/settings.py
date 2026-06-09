@@ -203,8 +203,7 @@ def database_config():
         )
         return bundled_sqlite_config()
 
-    local_debug = env_bool("DJANGO_DEBUG", default=True)
-    use_sqlite_default = ("test" in sys.argv) or (local_debug and not has_explicit_postgres_env())
+    use_sqlite_default = ("test" in sys.argv) or not has_explicit_postgres_env()
     use_sqlite = env_bool("DJANGO_USE_SQLITE", default=use_sqlite_default)
     if not use_sqlite:
         return postgres_config_from_env()
