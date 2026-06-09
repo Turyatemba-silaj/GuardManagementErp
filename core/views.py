@@ -3325,8 +3325,9 @@ def attendances(request):
     parsed_date = parse_date(selected_date) if selected_date else None
 
     if parsed_date:
-        deployments = models.Deployment.objects.select_related("employee", "site", "shift").filter(
+        deployments = models.Deployment.objects.select_related("employee", "site", "shift", "supervisor").filter(
             status=models.StatusChoices.ACTIVE,
+            attendance_required=True,
             start_date__lte=parsed_date,
         ).filter(
             Q(end_date__gte=parsed_date) | Q(end_date__isnull=True)
@@ -3368,6 +3369,8 @@ def attendances(request):
                 "replacement_employee",
                 "site",
                 "shift",
+                "deployment",
+                "deployment__supervisor",
                 "attendance",
             ),
         ).filter(shift_date=parsed_date)

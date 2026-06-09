@@ -1689,6 +1689,7 @@ class GuardSchedulingTests(TestCase):
             client=self.client_record,
             site=self.site,
             shift=self.shift,
+            supervisor=self.supervisor,
             start_date="2026-05-01",
         )
 
@@ -1955,6 +1956,22 @@ class GuardSchedulingTests(TestCase):
         schedule = GuardSchedule.objects.get()
         self.assertEqual(schedule.deployment, self.deployment)
         self.assertContains(response, "Brian Kato")
+        self.assertContains(response, self.deployment.deployment_reference)
+        self.assertContains(response, "Doreen Supervisor")
+        self.assertContains(response, "Payroll")
+
+    def test_attendance_page_ignores_deployments_without_attendance_capture(self):
+        self.deployment.attendance_required = False
+        self.deployment.save(update_fields=["attendance_required", "updated_at"])
+
+        response = self.client.get(
+            "/attendances/",
+            {"site": self.site.id, "date": "2026-05-16"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(GuardSchedule.objects.count(), 0)
+        self.assertContains(response, "No active attendance-required deployments")
 
     def test_attendance_page_defaults_to_today_all_sites(self):
         today = timezone.localdate()

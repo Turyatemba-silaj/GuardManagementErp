@@ -71,6 +71,32 @@
         width: 100%;
         min-width: 220px;
     }
+    .attendance-entry .workflow-note {
+        margin: 0 18px 14px;
+        padding: 12px 14px;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1e3a8a;
+        font-weight: 650;
+    }
+    .attendance-entry .workflow-note a {
+        color: #1d4ed8;
+        font-weight: 800;
+    }
+    .attendance-entry .context-cell {
+        min-width: 190px;
+        color: #334155;
+    }
+    .attendance-entry .context-cell strong {
+        display: block;
+        color: #0f172a;
+    }
+    .attendance-entry .context-cell span {
+        display: block;
+        color: var(--sentinel-muted);
+        font-size: 12px;
+    }
     .attendance-entry .guard-select {
         min-width: 190px;
     }
@@ -128,6 +154,7 @@
         <div class="buttons" aria-label="Export buttons">
             <span class="tool-btn">Excel</span>
             <a class="tool-btn" href="{% url 'core:attendance_summary_pdf' %}?month={{ selected_date|slice:':7' }}">PDF Summary</a>
+            <a class="tool-btn" href="{% url 'core:payroll' %}?month={{ selected_date|slice:':7' }}">Payroll</a>
             <span class="tool-btn">Column visibility</span>
         </div>
         <label class="search" for="search">Search:
@@ -150,10 +177,16 @@
         {% csrf_token %}
         <input type="hidden" name="site" value="{{ selected_site_id }}">
         <input type="hidden" name="date" value="{{ selected_date }}">
+        <p class="workflow-note">
+            Workflow: active deployment sets the site, supervisor, guard, and shift; attendance confirms who worked; payroll uses Present attendance for {{ selected_date|slice:':7' }} salary.
+        </p>
         <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
+                        <th>Site <span class="sort">&UpDownArrow;</span></th>
+                        <th>Deployment <span class="sort">&UpDownArrow;</span></th>
+                        <th>Supervisor <span class="sort">&UpDownArrow;</span></th>
                         <th>Scheduled Guard <span class="sort">&UpDownArrow;</span></th>
                         <th>Shift Date <span class="sort">&UpDownArrow;</span></th>
                         <th>Shift Type <span class="sort">&UpDownArrow;</span></th>
@@ -165,6 +198,18 @@
                 <tbody>
                     {% for schedule in schedules %}
                         <tr>
+                            <td class="context-cell">
+                                <strong>{{ schedule.site.site_code|default:"SITE" }}</strong>
+                                <span>{{ schedule.site.site_name }}</span>
+                            </td>
+                            <td class="context-cell">
+                                <strong>{{ schedule.deployment.deployment_reference }}</strong>
+                                <span>{{ schedule.deployment.get_site_role_display }}{% if schedule.deployment.duty_post %} - {{ schedule.deployment.duty_post }}{% endif %}</span>
+                            </td>
+                            <td class="context-cell">
+                                <strong>{{ schedule.deployment.supervisor.full_name|default:"Unassigned" }}</strong>
+                                <span>{{ schedule.deployment.supervisor.company_number|default:"No supervisor number" }}</span>
+                            </td>
                             <td>
                                 <input type="hidden" name="schedule_ids" value="{{ schedule.id }}">
                                 <select class="guard-select" name="scheduled_guard_{{ schedule.id }}" aria-label="Scheduled guard">
@@ -226,7 +271,7 @@
                         </tr>
                     {% empty %}
                         <tr class="empty-row">
-                            <td colspan="6">No data available in table</td>
+                            <td colspan="9">No active attendance-required deployments are scheduled for this site and date.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
