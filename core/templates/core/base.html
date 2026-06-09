@@ -661,30 +661,31 @@
         h1 { font-size: 26px; line-height: 1.14; }
         h2 { font-size: 16px; }
         .erp-shell {
-            grid-template-columns: 264px minmax(0, 1fr);
+            grid-template-columns: 286px minmax(0, 1fr);
         }
         .left_col {
             display: flex;
             flex-direction: column;
-            background: #111827;
+            background: #0f172a;
             border-right: 1px solid rgba(15, 23, 42, .08);
-            box-shadow: 12px 0 30px rgba(15, 23, 42, .12);
+            box-shadow: 14px 0 32px rgba(15, 23, 42, .14);
             scrollbar-width: thin;
-            scrollbar-color: rgba(148, 163, 184, .42) transparent;
+            scrollbar-color: rgba(148, 163, 184, .38) transparent;
         }
         .site_title {
-            min-height: 72px;
-            padding: 0 16px;
-            border-bottom-color: rgba(255, 255, 255, .08);
-            font-size: 17px;
+            min-height: 78px;
+            padding: 0 18px;
+            border-bottom-color: rgba(148, 163, 184, .16);
+            color: #ffffff;
+            font-size: 18px;
         }
         .site_title i {
-            width: 38px;
-            height: 38px;
-            border: 1px solid rgba(96, 165, 250, .35);
+            width: 42px;
+            height: 42px;
+            border: 1px solid rgba(45, 212, 191, .28);
             border-radius: 8px;
-            background: #1f2937;
-            color: #93c5fd;
+            background: rgba(15, 139, 111, .18);
+            color: #99f6e4;
             box-shadow: none;
         }
         .site_title span:last-child {
@@ -694,20 +695,40 @@
         .brand-kicker {
             color: #94a3b8;
             font-size: 10px;
-            letter-spacing: .1em;
+            letter-spacing: .12em;
         }
         .profile_info {
-            margin: 12px 12px 6px;
+            margin: 14px 14px 8px;
             padding: 12px;
-            border-color: rgba(148, 163, 184, .2);
-            background: #172033;
+            border: 1px solid rgba(148, 163, 184, .16);
+            background: #111c31;
             border-radius: 8px;
+        }
+        .sidebar-identity {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+        .sidebar-avatar {
+            width: 34px;
+            height: 34px;
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: #e8f5f1;
+            color: #0f6f5d;
+        }
+        .sidebar-meta {
+            min-width: 0;
         }
         .profile_info span {
             color: #94a3b8;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 800;
-            letter-spacing: .04em;
+            letter-spacing: .08em;
             text-transform: uppercase;
         }
         .profile_info strong {
@@ -720,30 +741,33 @@
             font-size: 14px;
         }
         .operator-status {
-            margin-top: 8px;
-            color: #bfdbfe;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(148, 163, 184, .14);
+            color: #cbd5e1;
             font-size: 12px;
+            font-weight: 700;
         }
         .operator-status::before {
             width: 7px;
             height: 7px;
             background: #22c55e;
-            box-shadow: 0 0 0 3px rgba(34, 197, 94, .16);
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, .14);
         }
         .menu_section {
             flex: 1;
             min-height: 0;
-            padding: 10px 10px 12px;
+            padding: 8px 12px 14px;
             overflow-y: auto;
         }
         .menu_section h3 {
-            padding: 8px 8px 9px;
+            padding: 10px 8px 9px;
             color: #94a3b8;
-            letter-spacing: .1em;
+            letter-spacing: .12em;
             font-size: 10px;
         }
         .department-menu {
-            gap: 6px;
+            gap: 5px;
             padding: 0 0 8px;
         }
         .department-group {
@@ -759,7 +783,7 @@
         .department-group summary {
             min-height: 42px;
             padding: 9px 10px;
-            color: #cbd5e1;
+            color: #dbe4ee;
             font-size: 13px;
             font-weight: 800;
         }
@@ -767,10 +791,16 @@
             color: #64748b;
             font-size: 12px;
         }
-        .department-group summary > i,
-        .department-links i,
-        .side-menu i {
-            color: #93c5fd;
+        .department-group summary > i {
+            width: 24px;
+            height: 24px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 7px;
+            background: rgba(148, 163, 184, .1);
+            color: #99f6e4;
+            font-size: 12px;
         }
         .department-group.is-active summary {
             color: #ffffff;
@@ -778,13 +808,13 @@
         .department-count {
             min-width: 22px;
             min-height: 20px;
-            background: rgba(148, 163, 184, .14);
+            background: rgba(148, 163, 184, .12);
             color: #cbd5e1;
             font-size: 10px;
         }
         .department-links {
             gap: 2px;
-            padding: 2px 6px 8px;
+            padding: 3px 6px 8px;
         }
         .department-links a,
         .side-menu a {
@@ -794,6 +824,19 @@
             color: #cbd5e1;
             font-size: 13px;
             transition: background .16s ease, border-color .16s ease, color .16s ease;
+        }
+        .department-links a .menu-title,
+        .side-menu a .menu-title {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .department-links i,
+        .side-menu i {
+            width: 18px;
+            color: #94a3b8;
+            text-align: center;
         }
         .department-links a:hover,
         .department-links a:focus,
@@ -805,25 +848,25 @@
         }
         .department-links a.active,
         .side-menu a.active {
-            background: #f8fafc;
-            border-color: #f8fafc;
-            color: #111827;
+            background: #ffffff;
+            border-color: #ffffff;
+            color: #0f172a;
             box-shadow: none;
             font-weight: 800;
         }
         .department-links a.active i,
         .side-menu a.active i {
-            color: #2563eb;
+            color: #0f8b6f;
         }
         .sidebar-footer {
-            margin: 0 12px 14px;
+            margin: 0 14px 14px;
             padding: 11px 12px;
-            border: 1px solid rgba(148, 163, 184, .18);
+            border: 1px solid rgba(148, 163, 184, .16);
             border-radius: 8px;
-            background: #172033;
+            background: #111c31;
             color: #cbd5e1;
             display: grid;
-            gap: 5px;
+            gap: 4px;
         }
         .sidebar-footer strong {
             font-size: 13px;
@@ -1036,20 +1079,25 @@
                 <span><span class="brand-kicker">Command System</span>Sentinel ERP</span>
             </a>
             <div class="profile_info">
-                <span>{% if current_tenant %}Workspace{% else %}Signed in{% endif %}</span>
-                <strong>
-                    {% if current_tenant %}
-                        {{ current_tenant.name }}
-                    {% elif request.user.is_authenticated %}
-                        {{ request.user.get_username }}
-                    {% else %}
-                        Guest
-                    {% endif %}
-                </strong>
+                <div class="sidebar-identity">
+                    <span class="sidebar-avatar"><i class="fa-solid fa-user-shield"></i></span>
+                    <div class="sidebar-meta">
+                        <span>{% if current_tenant %}Workspace{% else %}Signed in{% endif %}</span>
+                        <strong>
+                            {% if current_tenant %}
+                                {{ current_tenant.name }}
+                            {% elif request.user.is_authenticated %}
+                                {{ request.user.get_username }}
+                            {% else %}
+                                Guest
+                            {% endif %}
+                        </strong>
+                    </div>
+                </div>
                 <div class="operator-status">Operator console online</div>
             </div>
             <nav class="menu_section" aria-label="Department navigation">
-                <h3>Departments</h3>
+                <h3>Navigation</h3>
                 <div class="department-menu">
                     {% for group in sidebar_nav_groups %}
                         <details class="department-group {% if group.is_active %}is-active{% endif %}" {% if group.is_active or forloop.first %}open{% endif %}>
