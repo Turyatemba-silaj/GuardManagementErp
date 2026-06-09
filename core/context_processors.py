@@ -32,43 +32,50 @@ def nav_item(title, url, icon="fa-circle-dot"):
     return {"title": title, "url": url, "icon": icon}
 
 
-def model_nav_items(configs):
-    items = []
-    for slug, config in configs:
-        if slug == "guard-schedules":
-            url = reverse("core:attendances")
-        else:
-            url = reverse("core:record_list", args=[slug])
-        items.append(nav_item(config.title, url, "fa-circle-dot"))
-    return items
+def record_nav_item(user, slug, title, icon="fa-circle-dot"):
+    if not can_manage_slug(user, slug):
+        return None
+    return nav_item(title, reverse("core:record_list", args=[slug]), icon)
+
+
+def append_record_item(items, user, slug, title, icon="fa-circle-dot"):
+    item = record_nav_item(user, slug, title, icon)
+    if item:
+        items.append(item)
 
 
 def build_sidebar_nav(groups, can_manage_payroll, user):
-    operations_models = model_nav_items(groups.get("Operations", []))
-    hr_models = model_nav_items(groups.get("Human Resource", []))
-    finance_models = model_nav_items(groups.get("Finance", []))
-
     operations = []
     if is_manager(user):
-        operations.append(nav_item("Command Dashboard", reverse("core:dashboard"), "fa-gauge-high"))
+        operations.append(nav_item("Dashboard", reverse("core:dashboard"), "fa-gauge-high"))
     if can_manage_attendance(user):
         operations.extend(
             [
                 nav_item("Attendances", reverse("core:attendances"), "fa-calendar-check"),
-                nav_item("Upload Scheduled Guards", reverse("core:upload_duty_roster"), "fa-file-excel"),
+                nav_item("Upload Roster", reverse("core:upload_duty_roster"), "fa-file-excel"),
             ]
         )
-    operations.extend(operations_models)
+    append_record_item(operations, user, "deployments", "Deployments", "fa-people-arrows")
+    append_record_item(operations, user, "sites", "Sites", "fa-location-dot")
+    append_record_item(operations, user, "incidents", "Incidents", "fa-triangle-exclamation")
+    append_record_item(operations, user, "patrol-logs", "Patrol Logs", "fa-route")
 
-    human_resources = [
-        *hr_models,
-    ]
+    human_resources = []
+    append_record_item(human_resources, user, "employees", "Employees", "fa-id-card")
+    append_record_item(human_resources, user, "recruitment-applications", "Recruitment", "fa-user-plus")
+    append_record_item(human_resources, user, "trainings", "Training", "fa-graduation-cap")
+    append_record_item(human_resources, user, "leaves", "Leave Requests", "fa-person-walking-arrow-right")
+    append_record_item(human_resources, user, "disciplinary-actions", "Discipline", "fa-scale-balanced")
     if can_manage_payroll:
         human_resources.insert(0, nav_item("Payroll", reverse("core:payroll"), "fa-money-check-dollar"))
 
-    finance = [
-        *finance_models,
-    ]
+    finance = []
+    append_record_item(finance, user, "invoices", "Invoices", "fa-file-invoice")
+    append_record_item(finance, user, "payments", "Payments", "fa-money-bill-transfer")
+    append_record_item(finance, user, "expenses", "Expenses", "fa-receipt")
+    append_record_item(finance, user, "advances", "Advances", "fa-hand-holding-dollar")
+    append_record_item(finance, user, "budgets", "Budgets", "fa-chart-pie")
+    append_record_item(finance, user, "accounts", "Chart of Accounts", "fa-book")
 
     reports = []
     if is_manager(user):
@@ -87,25 +94,17 @@ def build_sidebar_nav(groups, can_manage_payroll, user):
     if can_manage_payroll:
         reports.extend(
             [
-                nav_item("Audit Report", reverse("core:audit_report"), "fa-clipboard-check"),
-                nav_item("General Ledger", reverse("core:general_ledger"), "fa-book"),
                 nav_item("Trial Balance", reverse("core:trial_balance"), "fa-scale-balanced"),
-                nav_item("Balance Sheet", reverse("core:balance_sheet"), "fa-table-columns"),
-                nav_item("Income Statement", reverse("core:income_statement"), "fa-chart-line"),
-                nav_item("Receivables Aging", reverse("core:receivables_aging"), "fa-clock-rotate-left"),
                 nav_item("Reconciliation", reverse("core:reconciliation_report"), "fa-code-compare"),
-                nav_item("Payroll Reconciliation", reverse("core:payroll_reconciliation_report"), "fa-money-check-dollar"),
-                nav_item("Expense Reconciliation", reverse("core:expense_reconciliation_report"), "fa-receipt"),
-                nav_item("Payment Reconciliation", reverse("core:payment_reconciliation_report"), "fa-money-bill-transfer"),
             ]
         )
 
-    admin = [nav_item("Public Home", reverse("core:home"), "fa-house")]
+    admin = [nav_item("Home", reverse("core:home"), "fa-house")]
     if can_manage_roles(user):
         admin.extend(
             [
                 nav_item("Users", reverse("core:user_list"), "fa-user-shield"),
-                nav_item("Roles & Permissions", reverse("core:role_list"), "fa-users-gear"),
+                nav_item("Roles", reverse("core:role_list"), "fa-users-gear"),
             ]
         )
     if user.is_superuser:
