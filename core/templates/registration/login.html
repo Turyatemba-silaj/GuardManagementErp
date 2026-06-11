@@ -1,31 +1,153 @@
 {% extends "core/base.html" %}
 
-{% block title %}Login{% endblock %}
+{% block title %}Sign In | Sentinel ERP{% endblock %}
+{% block page_label %}Sign In{% endblock %}
+
+{% block extra_head %}
+<style>
+    body {
+        min-height: 100vh;
+        background:
+            radial-gradient(circle at top left, rgba(15, 139, 111, .18), transparent 34%),
+            linear-gradient(135deg, #eef5f3 0%, #f8fbfa 52%, #eef4f8 100%);
+    }
+    .erp-shell {
+        min-height: 100vh;
+        display: block;
+    }
+    .left_col,
+    .top_nav {
+        display: none;
+    }
+    .right_col {
+        min-height: 100vh;
+        display: grid;
+    }
+    .main_container {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 28px;
+    }
+    .login-shell {
+        width: min(100%, 430px);
+        display: grid;
+        gap: 18px;
+    }
+    .login-brand {
+        text-align: center;
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+    }
+    .login-mark {
+        width: 54px;
+        height: 54px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 14px;
+        background: #0f172a;
+        color: #99f6e4;
+        box-shadow: 0 18px 36px rgba(15, 23, 42, .16);
+        font-size: 22px;
+    }
+    .login-brand h1 {
+        font-size: 26px;
+        font-weight: 850;
+    }
+    .login-brand p {
+        margin: 0;
+        color: var(--sentinel-muted);
+        font-weight: 650;
+    }
+    .login-card {
+        padding: 28px;
+        border: 1px solid rgba(199, 210, 218, .95);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, .96);
+        box-shadow: 0 24px 60px rgba(23, 32, 42, .14);
+    }
+    .login-card form {
+        display: grid;
+        gap: 16px;
+    }
+    .login-card .field {
+        gap: 7px;
+    }
+    .login-card label {
+        color: #334155;
+        font-size: 13px;
+    }
+    .login-card input {
+        min-height: 44px;
+        border-radius: 7px;
+        padding: 9px 12px;
+        font-size: 14px;
+    }
+    .login-error {
+        margin: 0;
+        padding: 10px 12px;
+        border: 1px solid #f2b8b2;
+        border-radius: 7px;
+        background: #fff1ef;
+        color: #a13a34;
+        font-weight: 700;
+    }
+    .login-submit {
+        width: 100%;
+        min-height: 44px;
+        margin-top: 4px;
+        font-size: 14px;
+    }
+    .login-footnote {
+        margin: 0;
+        text-align: center;
+        color: var(--sentinel-muted);
+        font-size: 12px;
+        font-weight: 650;
+    }
+    @media (max-width: 520px) {
+        .main_container {
+            padding: 18px;
+        }
+        .login-card {
+            padding: 22px;
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<section class="panel" style="max-width: 520px; margin: 60px auto;">
-    <div class="panel-head">
+<section class="login-shell" aria-label="Sign in">
+    <div class="login-brand">
+        <span class="login-mark"><i class="fa-solid fa-shield-halved"></i></span>
         <div>
-            <h1>Sign in</h1>
-            <p class="muted">Use your assigned system account.</p>
+            <h1>Sentinel ERP</h1>
+            <p>Secure management console</p>
         </div>
     </div>
-    <form class="form-card" method="post" style="grid-template-columns: 1fr;">
-        {% csrf_token %}
-        {% if form.errors %}
-            <p style="color: #1d4ed8;">Invalid username or password.</p>
-        {% endif %}
-        <div class="field">
-            {{ form.username.label_tag }}
-            {{ form.username }}
-        </div>
-        <div class="field">
-            {{ form.password.label_tag }}
-            {{ form.password }}
-        </div>
-        <div class="form-actions">
-            <button class="btn btn-primary" type="submit">Login</button>
-        </div>
-    </form>
+
+    <div class="login-card">
+        <form method="post">
+            {% csrf_token %}
+            {% if form.errors %}
+                <p class="login-error">Invalid username or password.</p>
+            {% endif %}
+            <div class="field">
+                {{ form.username.label_tag }}
+                {{ form.username }}
+            </div>
+            <div class="field">
+                {{ form.password.label_tag }}
+                {{ form.password }}
+            </div>
+            <button class="btn btn-primary login-submit" type="submit">
+                <i class="fa-solid fa-right-to-bracket"></i> Sign In
+            </button>
+        </form>
+    </div>
+
+    <p class="login-footnote">Authorized personnel only. Activity may be monitored.</p>
 </section>
 {% endblock %}

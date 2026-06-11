@@ -48,6 +48,12 @@ def build_sidebar_nav(groups, can_manage_payroll, user):
     operations = []
     if is_manager(user):
         operations.append(nav_item("Dashboard", reverse("core:dashboard"), "fa-gauge-high"))
+    append_record_item(operations, user, "clients", "Clients", "fa-building")
+    append_record_item(operations, user, "contracts", "Contracts", "fa-file-signature")
+    append_record_item(operations, user, "contract-site-requirements", "Contract Requirements", "fa-list-check")
+    append_record_item(operations, user, "sites", "Sites", "fa-location-dot")
+    append_record_item(operations, user, "shifts", "Shifts", "fa-clock")
+    append_record_item(operations, user, "deployments", "Deployments", "fa-people-arrows")
     if can_manage_attendance(user):
         operations.extend(
             [
@@ -55,8 +61,6 @@ def build_sidebar_nav(groups, can_manage_payroll, user):
                 nav_item("Upload Roster", reverse("core:upload_duty_roster"), "fa-file-excel"),
             ]
         )
-    append_record_item(operations, user, "deployments", "Deployments", "fa-people-arrows")
-    append_record_item(operations, user, "sites", "Sites", "fa-location-dot")
     append_record_item(operations, user, "incidents", "Incidents", "fa-triangle-exclamation")
     append_record_item(operations, user, "patrol-logs", "Patrol Logs", "fa-route")
 
@@ -143,6 +147,7 @@ def sidebar_menu(request):
             "sidebar_departments": [],
             "sidebar_active_department": "",
             "sidebar_nav_groups": [],
+            "can_manage_attendance": False,
             "can_manage_payroll": False,
             "current_tenant": None,
             "current_tenant_membership": None,
@@ -153,6 +158,7 @@ def sidebar_menu(request):
     if active_department not in groups:
         active_department = ""
 
+    can_manage_attendance_workflow = can_manage_attendance(user)
     can_manage_payroll = is_manager(user)
     sidebar_nav_groups = mark_active_nav(build_sidebar_nav(groups, can_manage_payroll, user), request.path)
 
@@ -161,6 +167,7 @@ def sidebar_menu(request):
         "sidebar_departments": list(groups.keys()),
         "sidebar_active_department": active_department,
         "sidebar_nav_groups": sidebar_nav_groups,
+        "can_manage_attendance": can_manage_attendance_workflow,
         "can_manage_payroll": can_manage_payroll,
         "current_tenant": getattr(request, "tenant", None),
         "current_tenant_membership": getattr(request, "tenant_membership", None),
